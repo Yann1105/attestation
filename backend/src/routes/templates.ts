@@ -366,12 +366,8 @@ router.post('/upload-image', imageUpload.single('image'), async (req, res) => {
     // 2. Optimize/compress images
     // 3. Generate multiple sizes/thumbnails
 
-    // Return the full URL for the uploaded image
-    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-    const host = process.env.BACKEND_HOST || 'localhost';
-    const port = process.env.PORT || '3002';
-    const baseUrl = process.env.BACKEND_URL || `${protocol}://${host}:${port}`;
-    const imageUrl = `${baseUrl}/uploads/images/${req.file.filename}`;
+    // Return the relative URL for the uploaded image (goes through frontend proxy)
+    const imageUrl = `/uploads/images/${req.file.filename}`;
 
     res.json({ imageUrl });
   } catch (error) {

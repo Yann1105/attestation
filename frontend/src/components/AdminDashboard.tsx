@@ -25,6 +25,7 @@ import {
 import { Participant, CertificateTemplate } from '../types';
 import { participantsApi, emailApi, generateCertificateNumber, templatesApi, certificateApi, getAuthToken } from '../utils/api';
 import { notifications } from '../utils/notifications';
+import { defaultTemplates } from '../utils/certificateTemplates';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -74,8 +75,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
       ]);
       setParticipants(participantsData);
 
-      // Sort templates: Canvas first, then HTML
-      const sortedTemplates = templatesData.sort((a, b) => {
+      // Combine default templates with saved custom templates
+      const allTemplates = [...defaultTemplates, ...templatesData];
+
+      // Sort templates: Yann first, then others
+      const sortedTemplates = allTemplates.sort((a, b) => {
+        const aIsYann = (a.name || '').toLowerCase().includes('yann');
+        const bIsYann = (b.name || '').toLowerCase().includes('yann');
+
+        // Yann toujours en premier
+        if (aIsYann && !bIsYann) return -1;
+        if (!aIsYann && bIsYann) return 1;
+
+        // Then sort by Canvas vs HTML
         const aHasCanvas = !!a.canvasData;
         const bHasCanvas = !!b.canvasData;
 

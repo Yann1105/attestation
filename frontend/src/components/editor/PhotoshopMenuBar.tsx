@@ -6,6 +6,7 @@ interface MenuItem {
   action?: () => void;
   separator?: boolean;
   items?: MenuItem[];
+  description?: string;
 }
 
 interface Menu {
@@ -38,6 +39,8 @@ interface MenuActions {
   erase?: () => void;
   freeTransform?: () => void;
   fill?: () => void;
+  stroke?: () => void;
+  findReplace?: () => void;
   preferences?: () => void;
   systemSettings?: () => void;
   setBackgroundColor?: () => void;
@@ -121,7 +124,7 @@ const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions = {} }) => 
             { label: 'Mode Perspective', action: actions.transformPerspective },
             { label: 'Courbure', action: actions.transformCurvature },
           ]},
-          { label: 'Déformation (Warp)', action: actions.transformWarp },
+          { label: 'Déformation (Warp)', action: actions.transformWarp, description: 'La Déformation (Warp) est un outil avancé de transformation permettant de modifier la forme d\'un objet, d\'un texte ou d\'une image en manipulant des points de contrôle, des courbes ou une grille flexible. Elle permet d\'obtenir des transformations organiques impossibles avec la simple rotation ou mise à l\'échelle.' },
           { separator: true },
           { label: 'Symétrie horizontale (Flip Horizontal)', action: actions.transformFlipHorizontal },
           { label: 'Symétrie verticale (Flip Vertical)', action: actions.transformFlipVertical },
@@ -132,7 +135,9 @@ const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions = {} }) => 
         ]},
         { label: 'Transformation manuelle', action: () => console.log('Manual transform') },
         { label: 'Remplir', shortcut: 'Shift+F5', action: actions.fill },
-        { label: 'Contour', action: () => console.log('Stroke') },
+        { label: 'Contour', action: actions.stroke },
+        { separator: true },
+        { label: 'Rechercher / Remplacer', shortcut: 'Ctrl+F', action: actions.findReplace },
         { separator: true },
         { label: 'Préférences', action: actions.preferences },
         { label: 'Paramètres du système', action: actions.systemSettings },
@@ -171,7 +176,7 @@ const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions = {} }) => 
       items: [
         { label: 'Nouveau calque', shortcut: 'Ctrl+Shift+N', action: () => console.log('New layer') },
         { label: 'Créer un groupe de calques', action: () => console.log('New group') },
-        { label: 'Calque de texte', action: () => console.log('Text layer') },
+        { label: 'Calque de texte', shortcut: 'Ctrl+Shift+T', action: () => console.log('Text layer') },
         { label: 'Calque de forme', action: () => console.log('Shape layer') },
         { label: 'Dupliquer le calque', shortcut: 'Ctrl+J', action: () => console.log('Duplicate layer') },
         { label: 'Supprimer le calque', action: () => console.log('Delete layer') },
@@ -325,14 +330,20 @@ const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions = {} }) => 
     }
 
     return (
-      <button
-        key={`${item.label}-${depth}-${index}`}
-        onClick={item.action}
-        className="w-full text-left px-3 py-1 hover:bg-gray-600 text-xs flex justify-between items-center"
-      >
-        <span>{item.label}</span>
-        {item.shortcut && <span className="text-gray-400 ml-4">{item.shortcut}</span>}
-      </button>
+      <div key={`${item.label}-${depth}-${index}`} className="relative group">
+        <button
+          onClick={item.action}
+          className="w-full text-left px-3 py-1 hover:bg-gray-600 text-xs flex justify-between items-center"
+        >
+          <span>{item.label}</span>
+          {item.shortcut && <span className="text-gray-400 ml-4">{item.shortcut}</span>}
+        </button>
+        {item.description && (
+          <div className="absolute left-full top-0 ml-2 bg-black text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 max-w-xs whitespace-normal">
+            {item.description}
+          </div>
+        )}
+      </div>
     );
   };
 

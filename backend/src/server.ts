@@ -10,7 +10,7 @@ import { emailRouter } from './routes/email';
 import { authRouter } from './routes/auth';
 import { apiLimiter, authLimiter, errorHandler, requestLogger, corsOptions } from './middleware';
 
-dotenv.config();
+dotenv.config({ path: './backend/.env' });
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -21,7 +21,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(requestLogger);
 
-// Serve static files from uploads directory
+// Serve static files from uploads directory at project root
 app.use('/uploads', express.static('uploads'));
 
 // Apply rate limiting to all API routes

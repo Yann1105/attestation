@@ -2343,7 +2343,11 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleLockLayer = () => {
     if (selectedElement) {
-      notifications.warning('Verrouillage de calque', 'Le verrouillage de calque sera bientôt disponible.');
+      handleElementUpdate(selectedElement.id, { locked: !selectedElement.locked });
+      notifications.success(
+        'Verrouillage ' + (selectedElement.locked ? 'désactivé' : 'activé'),
+        `Le calque a été ${selectedElement.locked ? 'déverrouillé' : 'verrouillé'}.`
+      );
     } else {
       notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque à verrouiller.');
     }
@@ -2862,6 +2866,157 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       // In a real implementation, this would update global state
       notifications.success('Couleur de premier plan définie', `La couleur ${color} sera utilisée pour les nouveaux éléments.`);
     }
+  };
+
+  const handleStroke = () => {
+    if (selectedElement) {
+      // Set stroke (border) color and width
+      const strokeColor = prompt('Couleur du contour (hex, rgb, ou nom):', selectedElement.strokeColor || '#000000');
+      const strokeWidth = prompt('Épaisseur du contour (pixels):', (selectedElement.strokeWidth || 1).toString());
+
+      if (strokeColor !== null && strokeWidth !== null) {
+        const width = parseInt(strokeWidth);
+        if (!isNaN(width) && width >= 0) {
+          handleElementUpdate(selectedElement.id, {
+            strokeColor: strokeColor,
+            strokeWidth: width
+          });
+          notifications.success('Contour appliqué', `Contour ${strokeColor} de ${width}px appliqué.`);
+        } else {
+          notifications.error('Épaisseur invalide', 'Veuillez entrer un nombre positif.');
+        }
+      }
+    } else {
+      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer un contour.');
+    }
+  };
+
+  const handleFindReplace = () => {
+    if (template.elements.length === 0) {
+      notifications.warning('Aucun élément textuel', 'Il n\'y a aucun élément textuel dans le document.');
+      return;
+    }
+
+    // Get all text elements
+    const textElements = template.elements.filter(el => el.type === 'text');
+    if (textElements.length === 0) {
+      notifications.warning('Aucun texte trouvé', 'Aucun élément contenant du texte n\'a été trouvé.');
+      return;
+    }
+
+    // Show find/replace dialog
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    modal.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div class="flex justify-between items-center p-4 border-b">
+          <h3 class="text-lg font-semibold">Rechercher / Remplacer</h3>
+          <button class="text-gray-500 hover:text-gray-700 text-xl cancel-btn">&times;</button>
+        </div>
+        <div class="p-4 space-y-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Rechercher</label>
+            <input type="text" class="w-full border rounded px-3 py-2 find-input" placeholder="Texte à rechercher">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Remplacer par</label>
+            <input type="text" class="w-full border rounded px-3 py-2 replace-input" placeholder="Texte de remplacement">
+          </div>
+          <div class="flex items-center">
+            <input type="checkbox" class="mr-2 case-sensitive" id="case-sensitive">
+            <label for="case-sensitive" class="text-sm">Respecter la casse</label>
+          </div>
+          <div class="text-sm text-gray-600">
+            ${textElements.length} élément(s) textuel(s) trouvé(s)
+          </div>
+          <div class="flex justify-end space-x-2 pt-4">
+            <button class="px-4 py-2 bg-gray-200 rounded cancel-btn">Annuler</button>
+            <button class="px-4 py-2 bg-blue-500 text-white rounded find-btn">Rechercher</button>
+            <button class="px-4 py-2 bg-green-500 text-white rounded disabled replace-all-btn" disabled>Remplacer tout</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const findInput = modal.querySelector('.find-input') as HTMLInputElement;
+    const replaceInput = modal.querySelector('.replace-input') as HTMLInputElement;
+    const caseSensitive = modal.querySelector('.case-sensitive') as HTMLInputElement;
+    const findBtn = modal.querySelector('.find-btn') as HTMLButtonElement;
+    const replaceAllBtn = modal.querySelector('.replace-all-btn') as HTMLButtonElement;
+
+    let foundMatches: Array<{ element: TemplateElement, content: string, matches: number }> = [];
+
+    const performSearch = () => {
+      const findText = findInput.value;
+      const flags = caseSensitive.checked ? 'g' : 'gi';
+      const regex = new RegExp(findText, flags);
+
+      foundMatches = [];
+      let totalMatches = 0;
+
+      textElements.forEach(element => {
+        const content = element.content || '';
+        const matches = content.match(regex);
+        if (matches) {
+          foundMatches.push({
+            element,
+            content,
+            matches: matches.length
+          });
+          totalMatches += matches.length;
+        }
+      });
+
+      if (totalMatches > 0) {
+        replaceAllBtn.disabled = false;
+        replaceAllBtn.classList.remove('disabled');
+        findBtn.textContent = `${totalMatches} occurrence(s) trouvée(s)`;
+        findBtn.disabled = true;
+      } else {
+        replaceAllBtn.disabled = true;
+        replaceAllBtn.classList.add('disabled');
+        findBtn.textContent = 'Aucune occurrence trouvée';
+      }
+    };
+
+    const performReplace = () => {
+      if (foundMatches.length === 0) return;
+
+      const findText = findInput.value;
+      const replaceText = replaceInput.value;
+      const flags = caseSensitive.checked ? 'g' : 'gi';
+      const regex = new RegExp(findText, flags);
+
+      let totalReplacements = 0;
+
+      foundMatches.forEach(match => {
+        const newContent = match.content.replace(regex, replaceText);
+        if (newContent !== match.content) {
+          handleElementUpdate(match.element.id, { content: newContent });
+          totalReplacements += match.matches;
+        }
+      });
+
+      if (totalReplacements > 0) {
+        notifications.success('Remplacement effectué', `${totalReplacements} occurrence(s) remplacée(s).`);
+      }
+
+      document.body.removeChild(modal);
+    };
+
+    findBtn.addEventListener('click', performSearch);
+    replaceAllBtn.addEventListener('click', performReplace);
+
+    modal.querySelectorAll('.cancel-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+    });
+
+    // Focus on find input
+    findInput.focus();
   };
 
   // Helper function to show template selection dialog
@@ -3613,6 +3768,8 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     erase: handleErase,
     freeTransform: handleFreeTransform,
     fill: handleFill,
+    stroke: handleStroke,
+    findReplace: handleFindReplace,
     preferences: handlePreferences,
     systemSettings: handleSystemSettings,
     setBackgroundColor: handleSetBackgroundColor,

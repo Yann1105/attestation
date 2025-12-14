@@ -157,7 +157,7 @@ router.put('/:id', authMiddleware, validate(updateParticipantSchema), async (req
     }
 
     fields.push(`updated_at = CURRENT_TIMESTAMP`);
-    values.push(parseInt(id));
+    values.push(parseInt(id)); // TODO: use participantId after validation
 
     const result = await query(`
       UPDATE participants
@@ -204,6 +204,12 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { templateId, trainingData } = req.body;
 
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid participant ID' });
+    }
+
+    const participantId = parseInt(id);
+
     if (!templateId) {
       return res.status(400).json({ error: 'Template ID is required' });
     }
@@ -241,7 +247,7 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
 
       if (updateFields.length > 0) {
         updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-        updateValues.push(parseInt(id));
+        updateValues.push(participantId);
 
         await query(
           `UPDATE participants SET ${updateFields.join(', ')} WHERE id = $${paramCount}`,
@@ -251,7 +257,7 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
     }
 
     // Get updated participant data
-    const participantResult = await query('SELECT * FROM participants WHERE id = $1', [parseInt(id)]);
+    const participantResult = await query('SELECT * FROM participants WHERE id = $1', [participantId]);
     if (participantResult.rows.length === 0) {
       return res.status(404).json({ error: 'Participant not found' });
     }
@@ -271,11 +277,11 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
       // Update participant with generated certificate number
       await query(
         'UPDATE participants SET certificate_number = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        [certificateNumber, parseInt(id)]
+        [certificateNumber, participantId]
       );
 
       // Refresh participant data
-      const updatedResult = await query('SELECT * FROM participants WHERE id = $1', [parseInt(id)]);
+      const updatedResult = await query('SELECT * FROM participants WHERE id = $1', [participantId]);
       participant = updatedResult.rows[0];
     }
 
@@ -297,7 +303,7 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
         // Update the participant with corrected date
         await query(
           'UPDATE participants SET training_date = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-          [trainingDate, parseInt(id)]
+          [trainingDate, participantId]
         );
         participant.training_date = trainingDate;
       }
@@ -347,7 +353,7 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
     // Update participant status to approved and store template_id
     await query(
       'UPDATE participants SET status = $1, approval_date = $2, template_id = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
-      ['approved', new Date().toISOString(), parseInt(templateId), parseInt(id)]
+      ['approved', new Date().toISOString(), parseInt(templateId), participantId]
     );
 
     // Send certificate email
@@ -385,6 +391,9 @@ router.post('/:id/approve', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id || isNaN(Number(id))) {
+      return res.status(400).json({ error: 'Invalid participant ID' });
+    }
     await query('DELETE FROM participants WHERE id = $1', [parseInt(id)]);
     res.json({ success: true });
   } catch (error) {

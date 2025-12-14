@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts",
+    "dev": "cd .. && ts-node backend/src/server.ts",
     "migrate": "ts-node src/migrate-db.ts",
     "test:db": "node test-db-connection.js",
     "test": "echo \"Error: no test specified\" && exit 1"

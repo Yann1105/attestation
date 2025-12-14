@@ -41,6 +41,25 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
     });
   }
 
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'File Too Large',
+        message: 'The uploaded file exceeds the maximum allowed size.'
+      });
+    } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        error: 'Invalid File Type',
+        message: 'Unexpected file type. Only images are allowed.'
+      });
+    } else {
+      return res.status(400).json({
+        error: 'Upload Error',
+        message: err.message
+      });
+    }
+  }
+
   if (err.name === 'UnauthorizedError') {
     return res.status(401).json({
       error: 'Unauthorized',

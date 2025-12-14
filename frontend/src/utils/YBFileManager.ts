@@ -149,19 +149,103 @@ class YBFileManager {
   }
 
   /**
-   * Placeholder for exporting project data to other formats.
-   * This would involve specific rendering logic for each format.
+   * Exports project data to other formats.
    * @param format The target format (e.g., 'png', 'pdf', 'svg', 'psd').
+   * @param projectData The project data to export.
    * @returns A Promise that resolves when the export is complete.
    */
-  async exportTo(format: string): Promise<void> {
-    console.warn(`Export to ${format} is not fully implemented. This is a placeholder.`);
-    // In a real application, this would involve:
-    // 1. Rendering the canvas to the desired format (e.g., using HTML Canvas API for PNG/JPEG).
-    // 2. Using a library for PDF/SVG generation.
-    // 3. PSD export would be highly complex and likely require a dedicated library or backend service.
-    alert(`Exporting to ${format} is not yet fully supported.`);
-    return Promise.resolve();
+  async exportTo(format: string, projectData: ProjectData): Promise<void> {
+    try {
+      if (format === 'png') {
+        await this.exportToPNG(projectData);
+      } else if (format === 'pdf') {
+        throw new Error('PDF export requires jsPDF library, which is not installed.');
+      } else if (format === 'svg') {
+        await this.exportToSVG(projectData);
+      } else if (format === 'psd') {
+        throw new Error('PSD export is not implemented. Requires complex PSD file generation library.');
+      } else {
+        throw new Error(`Unsupported export format: ${format}`);
+      }
+    } catch (error) {
+      console.error(`Export to ${format} failed:`, error);
+      throw error;
+    }
+  }
+
+  private async exportToPNG(projectData: ProjectData): Promise<void> {
+    const { canvasSettings, elements } = projectData;
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('Canvas context not available');
+    }
+
+    canvas.width = canvasSettings.width;
+    canvas.height = canvasSettings.height;
+
+    // Fill background
+    ctx.fillStyle = canvasSettings.backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Render elements (simplified, no advanced rendering)
+    for (const element of elements) {
+      if (element.type === 'text') {
+        ctx.fillStyle = element.color || '#000000';
+        ctx.font = `${element.fontSize || 16}px ${element.fontFamily || 'Arial'}`;
+        ctx.fillText(element.content || '', element.x, element.y + (element.fontSize || 16));
+      } else if (element.type === 'shape' || element.type === 'image') {
+        // Simplified rendering
+        ctx.fillStyle = element.backgroundColor || '#cccccc';
+        ctx.fillRect(element.x, element.y, element.width, element.height);
+      }
+      // Add more rendering logic as needed for full support
+    }
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `project.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log("Project exported successfully as PNG");
+      }
+    }, 'image/png');
+  }
+
+  private async exportToSVG(projectData: ProjectData): Promise<void> {
+    const { canvasSettings, elements } = projectData;
+
+    let svgContent = `<svg width="${canvasSettings.width}" height="${canvasSettings.height}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="${canvasSettings.backgroundColor}" />`;
+
+    // Add elements (very basic)
+    for (const element of elements) {
+      if (element.type === 'text') {
+        svgContent += `<text x="${element.x}" y="${element.y + (element.fontSize || 16)}" font-family="${element.fontFamily || 'Arial'}" font-size="${element.fontSize || 16}" fill="${element.color || '#000000'}">${(element.content || '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>')}</text>`;
+      } else if (element.type === 'shape') {
+        svgContent += `<rect x="${element.x}" y="${element.y}" width="${element.width}" height="${element.height}" fill="${element.backgroundColor || '#cccccc'}" />`;
+      }
+      // Add more as needed
+    }
+
+    svgContent += '</svg>';
+
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `project.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    console.log("Project exported successfully as SVG");
   }
 }
 

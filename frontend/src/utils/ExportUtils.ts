@@ -333,3 +333,4 @@ export class ExportUtils {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }
+}
