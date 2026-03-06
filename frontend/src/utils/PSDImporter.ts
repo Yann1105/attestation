@@ -173,18 +173,19 @@ export class PSDImporter {
         if (layer.mask) {
           layerInfo.mask = {
             bounds: layer.mask.bounds,
-            imageData: layer.mask.imageData
+            imageData: layer.mask.imageData,
+            type: 'raster'
           };
         }
 
         // Extract vector mask
         if (layer.vectorMask) {
-           layerInfo.vectorMask = {
-             bounds: layer.vectorMask.bounds || layer.bounds,
-             path: layer.vectorMask.path || [],
-             invert: layer.vectorMask.invert || false
-           };
-         }
+          layerInfo.vectorMask = {
+            bounds: layer.vectorMask.bounds || layer.bounds,
+            path: layer.vectorMask.path || [],
+            invert: layer.vectorMask.invert || false
+          };
+        }
 
         // Extract effects
         if (layer.effects) {
@@ -323,7 +324,7 @@ export class PSDImporter {
           scale: effects.patternOverlay.scale,
           linked: effects.patternOverlay.linked
         },
-          opacity: effects.patternOverlay.opacity
+        opacity: effects.patternOverlay.opacity
       });
     }
 

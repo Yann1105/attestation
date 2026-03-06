@@ -8,6 +8,10 @@ import { trainingsRouter } from './routes/trainings';
 import { certificatesRouter } from './routes/certificates';
 import { emailRouter } from './routes/email';
 import { authRouter } from './routes/auth';
+import { photoshopRoutes } from './features/photoshop/routes';
+import canvasRoutes from './features/canvas/routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { apiLimiter, authLimiter, errorHandler, requestLogger, corsOptions } from './middleware';
 
 dotenv.config({ path: './backend/.env' });
@@ -33,7 +37,11 @@ app.use('/api/participants', participantsRouter);
 app.use('/api/templates', templatesRouter);
 app.use('/api/trainings', trainingsRouter);
 app.use('/api/certificates', certificatesRouter);
+app.use('/api/certificates', certificatesRouter);
 app.use('/api/email', emailRouter);
+app.use('/api/photoshop', photoshopRoutes);
+app.use('/api/canvas', canvasRoutes);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

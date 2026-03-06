@@ -78,11 +78,11 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    
+
     if (response.success && response.data?.token) {
       setAuthToken(response.data.token);
     }
-    
+
     return response;
   },
 
@@ -122,28 +122,42 @@ export const participantsApi = {
   }
 };
 
+const normalizeTemplate = (data: any): CertificateTemplate => {
+  return {
+    ...data,
+    aiGenerated: data.ai_generated !== undefined ? data.ai_generated : data.aiGenerated,
+    aiPrompt: data.ai_prompt || data.aiPrompt,
+    outputFormat: data.output_format || data.outputFormat || 'html',
+    canvasData: typeof data.canvas_data === 'string' ? JSON.parse(data.canvas_data) : (data.canvas_data || data.canvasData)
+  };
+};
+
 // Templates API
 export const templatesApi = {
   async getAll(): Promise<CertificateTemplate[]> {
-    return apiCall('/templates');
+    const data = await apiCall('/templates');
+    return Array.isArray(data) ? data.map(normalizeTemplate) : [];
   },
 
   async get(id: string): Promise<CertificateTemplate> {
-    return apiCall(`/templates/${id}`);
+    const data = await apiCall(`/templates/${id}`);
+    return normalizeTemplate(data);
   },
 
   async create(template: Omit<CertificateTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<CertificateTemplate> {
-    return apiCall('/templates', {
+    const data = await apiCall('/templates', {
       method: 'POST',
       body: JSON.stringify(template),
     });
+    return normalizeTemplate(data);
   },
 
   async update(id: string, updates: Partial<CertificateTemplate>): Promise<CertificateTemplate> {
-    return apiCall(`/templates/${id}`, {
+    const data = await apiCall(`/templates/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });
+    return normalizeTemplate(data);
   },
 
   async delete(id: string): Promise<void> {
@@ -298,7 +312,125 @@ export const certificateApi = {
   }
 };
 
+// Canvas Feature API
+export const canvasApi = {
+  async getAllTemplates(): Promise<CertificateTemplate[]> {
+    try {
+      const response = await apiCall('/canvas/templates');
+      const data = response.success ? response.data : response;
+      const templates = Array.isArray(data) ? data : [];
+      return templates.map(normalizeTemplate);
+    } catch (error) {
+      console.error('Failed to fetch canvas templates:', error);
+      return [];
+    }
+  },
+
+  async getTemplate(id: string): Promise<CertificateTemplate> {
+    const response = await apiCall(`/canvas/templates/${id}`);
+    const data = response.data || response;
+    return normalizeTemplate(data);
+  },
+
+  async generate(prompt: string, options: any = {}): Promise<CertificateTemplate> {
+    const response = await apiCall('/canvas/generate', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, ...options }),
+    });
+
+    console.log('Canvas Generation Response:', response);
+
+    // Normalize response
+    const content = response.html || response.canvasData?.content || (typeof response.canvasData === 'string' ? response.canvasData : '');
+    const format = response.outputFormat || response.canvasData?.format || 'html';
+
+    const normalized = {
+      ...response,
+      name: response.name || `Design ${new Date().toLocaleString()}`,
+      html: format === 'html' ? content : undefined,
+      width: response.width,
+      height: response.height,
+      canvasData: response.canvasData || { content, format },
+      outputFormat: format,
+      aiGenerated: true,
+      aiPrompt: prompt
+    } as CertificateTemplate;
+
+    console.log('Normalized Generate Template:', normalized);
+    return normalized;
+  },
+
+  async create(template: any): Promise<CertificateTemplate> {
+    const response = await apiCall('/canvas/templates', {
+      method: 'POST',
+      body: JSON.stringify(template),
+    });
+    const data = response.data || response;
+    return normalizeTemplate(data);
+  },
+
+  async update(id: string, updates: any): Promise<CertificateTemplate> {
+    const response = await apiCall(`/canvas/templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+    const data = response.data || response;
+    return normalizeTemplate(data);
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiCall(`/canvas/templates/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async renderPDF(canvasData: any, variables: any = {}): Promise<Blob> {
+    const token = getAuthToken();
+    const response = await fetch(`${API_BASE_URL}/canvas/render/pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ canvasData, variables }),
+    });
+
+    if (!response.ok) throw new Error('PDF Export failed');
+    return response.blob();
+  }
+};
+
+// AI Templates API
+export const aiTemplatesApi = {
+  async generate(request: {
+    type: 'attestation' | 'certificat' | 'affiche';
+    customPrompt?: string;
+    save?: boolean;
+    name?: string;
+  }): Promise<{
+    type: string;
+    html: string;
+    variables: string[];
+    description: string;
+    saved?: boolean;
+    templateId?: string;
+  }> {
+    return apiCall('/templates/generate-ai', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  },
+
+  async saveVersion(templateId: string, html: string, variables: any) {
+    return apiCall(`/templates/${templateId}/version`, {
+      method: 'POST',
+      body: JSON.stringify({ html, variables }),
+    });
+  }
+};
+
 // Utility function to generate certificate numbers
+
 export const generateCertificateNumber = async (): Promise<string> => {
   const response = await apiCall('/certificates/generate-number');
   return response.certificateNumber;

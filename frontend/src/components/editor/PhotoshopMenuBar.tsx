@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ChevronRight } from 'lucide-react';
 
 interface MenuItem {
   label?: string;
@@ -7,6 +8,7 @@ interface MenuItem {
   separator?: boolean;
   items?: MenuItem[];
   description?: string;
+  disabled?: boolean;
 }
 
 interface Menu {
@@ -14,7 +16,7 @@ interface Menu {
   items: MenuItem[];
 }
 
-interface MenuActions {
+export interface MenuActions {
   newFile?: () => void;
   openFile?: () => void;
   openAsLayer?: () => void;
@@ -29,8 +31,8 @@ interface MenuActions {
   importImage?: () => void;
   importFile?: () => void;
   browseInBridge?: () => void;
-  saveYB?: () => void; // New action for saving .yb files
-  loadYB?: () => void; // New action for loading .yb files
+  saveYB?: () => void;
+  loadYB?: () => void;
   undo?: () => void;
   redo?: () => void;
   cut?: () => void;
@@ -59,7 +61,6 @@ interface MenuActions {
   fullScreen?: () => void;
   toggleTheme?: () => void;
   showActiveLayersOnly?: () => void;
-  // Transformation actions
   transformScale?: () => void;
   transformRotate?: () => void;
   transformSkew?: () => void;
@@ -71,294 +72,245 @@ interface MenuActions {
   transformRotate180?: () => void;
   transformRotate90CW?: () => void;
   transformRotate90CCW?: () => void;
-  // Add more as needed
+  duplicateLayer?: () => void;
+  deleteLayer?: () => void;
+  groupLayers?: () => void;
+  ungroupLayers?: () => void;
+  hideLayers?: () => void;
+  lockLayers?: () => void;
+  mergeLayers?: () => void;
+  flattenImage?: () => void;
+  imageSize?: () => void;
+  canvasSize?: () => void;
+  invertSelection?: () => void;
+  actualSize?: () => void;
+  layerMask?: () => void;
+  clippingMask?: () => void;
+  colorOverlay?: () => void;
+  gradientOverlay?: () => void;
+  dropShadow?: () => void;
 }
 
 interface PhotoshopMenuBarProps {
-  actions?: MenuActions;
+  actions: MenuActions;
 }
 
-const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions = {} }) => {
+const PhotoshopMenuBar: React.FC<PhotoshopMenuBarProps> = ({ actions }) => {
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const menus: Menu[] = [
     {
       name: 'Fichier',
       items: [
-        { label: 'Nouveau document', shortcut: 'Ctrl+N', action: actions.newFile },
-        { label: 'Ouvrir', shortcut: 'Ctrl+O', action: actions.openFile },
-        { label: 'Ouvrir un fichier .yb', action: actions.loadYB },
-        { label: 'Importer (PNG, JPG, PSD, AI)', action: actions.importFile },
-        { label: 'Ouvrir en tant que calque', action: actions.openAsLayer },
-        { label: 'Parcourir dans Bridge', action: actions.browseInBridge },
+        { label: 'Nouveau...', shortcut: 'Ctrl+N', action: actions.newFile },
+        { label: 'Ouvrir...', shortcut: 'Ctrl+O', action: actions.openFile },
         { label: 'Ouvrir récent', action: actions.openRecent },
         { separator: true },
         { label: 'Enregistrer', shortcut: 'Ctrl+S', action: actions.save },
-        { label: 'Enregistrer sous...', shortcut: 'Ctrl+Shift+S', action: actions.saveAs },
-        { label: 'Enregistrer (.yb)', action: actions.saveYB },
-        { label: 'Exporter (PNG, JPG, PDF, SVG, PSD)', action: actions.export },
+        { label: 'Enregistrer sous...', shortcut: 'Shift+Ctrl+S', action: actions.saveAs },
+        { label: 'Exporter le certificat', shortcut: 'Ctrl+E', action: actions.export },
         { separator: true },
-        { label: 'Imprimer', shortcut: 'Ctrl+P', action: actions.print },
-        { label: 'Informations du document', action: actions.documentInfo },
-        { separator: true },
-        { label: 'Fermer le document', shortcut: 'Ctrl+W', action: actions.closeFile },
-        { label: 'Quitter', action: actions.quit },
-      ]
+        { label: 'Fermer', shortcut: 'Ctrl+W', action: actions.closeFile },
+        { label: 'Quitter', shortcut: 'Ctrl+Q', action: actions.quit },
+      ],
     },
     {
       name: 'Édition',
       items: [
         { label: 'Annuler', shortcut: 'Ctrl+Z', action: actions.undo },
-        { label: 'Rétablir', shortcut: 'Ctrl+Shift+Z', action: actions.redo },
+        { label: 'Rétablir', shortcut: 'Shift+Ctrl+Z', action: actions.redo },
         { separator: true },
         { label: 'Couper', shortcut: 'Ctrl+X', action: actions.cut },
         { label: 'Copier', shortcut: 'Ctrl+C', action: actions.copy },
         { label: 'Coller', shortcut: 'Ctrl+V', action: actions.paste },
-        { label: 'Effacer', shortcut: 'Del', action: actions.erase },
         { separator: true },
-        { label: 'Transformation libre', shortcut: 'Ctrl+T', action: actions.freeTransform },
-        { label: 'Transformation', items: [
-          { label: 'Homothétie (Scale)', action: actions.transformScale },
-          { label: 'Rotation (Rotate)', action: actions.transformRotate },
-          { label: 'Inclinaison (Skew)', action: actions.transformSkew },
-          { label: 'Perspective', items: [
-            { label: 'Mode Perspective', action: actions.transformPerspective },
-            { label: 'Courbure', action: actions.transformCurvature },
-          ]},
-          { label: 'Déformation (Warp)', action: actions.transformWarp, description: 'La Déformation (Warp) est un outil avancé de transformation permettant de modifier la forme d\'un objet, d\'un texte ou d\'une image en manipulant des points de contrôle, des courbes ou une grille flexible. Elle permet d\'obtenir des transformations organiques impossibles avec la simple rotation ou mise à l\'échelle.' },
-          { separator: true },
-          { label: 'Symétrie horizontale (Flip Horizontal)', action: actions.transformFlipHorizontal },
-          { label: 'Symétrie verticale (Flip Vertical)', action: actions.transformFlipVertical },
-          { separator: true },
-          { label: 'Rotation 180°', action: actions.transformRotate180 },
-          { label: 'Rotation 90° horaire (Rotate 90° CW)', action: actions.transformRotate90CW },
-          { label: 'Rotation 90° antihoraire (Rotate 90° CCW)', action: actions.transformRotate90CCW },
-        ]},
-        { label: 'Transformation manuelle', action: () => console.log('Manual transform') },
-        { label: 'Remplir', shortcut: 'Shift+F5', action: actions.fill },
-        { label: 'Contour', action: actions.stroke },
+        { label: 'Transformation manuelle', shortcut: 'Ctrl+T', action: actions.freeTransform },
         { separator: true },
-        { label: 'Rechercher / Remplacer', shortcut: 'Ctrl+F', action: actions.findReplace },
-        { separator: true },
-        { label: 'Préférences', action: actions.preferences },
-        { label: 'Paramètres du système', action: actions.systemSettings },
-        { label: 'Définir la couleur d\'arrière-plan', action: actions.setBackgroundColor },
-        { label: 'Définir la couleur de premier plan', action: actions.setForegroundColor },
-      ]
+        { label: 'Préférences', shortcut: 'Ctrl+K', action: actions.preferences },
+      ],
     },
     {
       name: 'Image',
       items: [
-        { label: 'Taille de l\'image', shortcut: 'Ctrl+Alt+I', action: () => console.log('Image size') },
-        { label: 'Taille de la zone de travail', action: () => console.log('Canvas size') },
-        { label: 'Mode de couleur', items: [
-          { label: 'RVB', action: () => console.log('RGB mode') },
-          { label: 'CMJN', action: () => console.log('CMYK mode') },
-          { label: 'Niveaux de gris', action: () => console.log('Grayscale mode') },
-        ]},
+        { label: 'Mode' },
+        { label: 'Réglages' },
         { separator: true },
-        { label: 'Réglages', items: [
-          { label: 'Luminosité / Contraste', shortcut: 'Ctrl+Shift+L', action: () => console.log('Brightness/Contrast') },
-          { label: 'Niveaux', shortcut: 'Ctrl+L', action: () => console.log('Levels') },
-          { label: 'Courbes', shortcut: 'Ctrl+M', action: () => console.log('Curves') },
-          { label: 'Balance des couleurs', action: () => console.log('Color balance') },
-          { label: 'Teinte / Saturation', shortcut: 'Ctrl+U', action: () => console.log('Hue/Saturation') },
-          { label: 'Correction sélective', action: () => console.log('Selective color') },
-          { label: 'Noir et blanc', action: () => console.log('Black and white') },
-        ]},
+        { label: 'Taille de l\'image...', shortcut: 'Alt+Ctrl+I', action: actions.imageSize },
+        { label: 'Taille de la zone de travail...', shortcut: 'Alt+Ctrl+C', action: actions.canvasSize },
         { separator: true },
-        { label: 'Rognage automatique', action: () => console.log('Auto crop') },
-        { label: 'Rotation de l\'image', action: () => console.log('Image rotation') },
-        { label: 'Inverser les couleurs', action: () => console.log('Invert colors') },
-      ]
+        { label: 'Rognage' },
+        { label: 'Rotation de l\'image' },
+        { separator: true },
+        { label: 'Dupliquer...' }
+      ],
     },
     {
       name: 'Calque',
       items: [
-        { label: 'Nouveau calque', shortcut: 'Ctrl+Shift+N', action: () => console.log('New layer') },
-        { label: 'Créer un groupe de calques', action: () => console.log('New group') },
-        { label: 'Calque de texte', shortcut: 'Ctrl+Shift+T', action: () => console.log('Text layer') },
-        { label: 'Calque de forme', action: () => console.log('Shape layer') },
-        { label: 'Dupliquer le calque', shortcut: 'Ctrl+J', action: () => console.log('Duplicate layer') },
-        { label: 'Supprimer le calque', action: () => console.log('Delete layer') },
+        {
+          label: 'Nouveau', items: [
+            { label: 'Calque...', shortcut: 'Shift+Ctrl+N' },
+            { label: 'Groupe...', shortcut: 'G', action: actions.groupLayers }
+          ]
+        },
+        { label: 'Dupliquer le calque...', action: actions.duplicateLayer },
+        {
+          label: 'Supprimer', items: [
+            { label: 'Calque', action: actions.deleteLayer },
+            { label: 'Calques cachés' }
+          ]
+        },
         { separator: true },
-        { label: 'Fusionner les calques', shortcut: 'Ctrl+Shift+E', action: () => console.log('Merge layers') },
-        { label: 'Aplatir l\'image', action: () => console.log('Flatten image') },
+        {
+          label: 'Style de calque', items: [
+            { label: 'Options de fusion...' },
+            { separator: true },
+            { label: 'Ombre portée', action: actions.dropShadow },
+            { label: 'Incrustation couleur', action: actions.colorOverlay },
+            { label: 'Incrustation en dégradé', action: actions.gradientOverlay }
+          ]
+        },
         { separator: true },
-        { label: 'Masque de fusion', action: () => console.log('Layer mask') },
-        { label: 'Masque d\'écrêtage', action: () => console.log('Clipping mask') },
+        {
+          label: 'Masque de fusion', items: [
+            { label: 'Tout faire apparaître', action: actions.layerMask },
+            { label: 'Tout masquer' }
+          ]
+        },
         { separator: true },
-        { label: 'Styles de calque', items: [
-          { label: 'Ombre portée', action: () => console.log('Drop shadow') },
-          { label: 'Lueur interne', action: () => console.log('Inner glow') },
-          { label: 'Lueur externe', action: () => console.log('Outer glow') },
-          { label: 'Biseautage / Estampage', action: () => console.log('Bevel/Emboss') },
-          { label: 'Incrustation de couleur', action: () => console.log('Color overlay') },
-          { label: 'Incrustation de dégradé', action: () => console.log('Gradient overlay') },
-          { label: 'Incrustation de motif', action: () => console.log('Pattern overlay') },
-        ]},
-        { separator: true },
-        { label: 'Verrouiller le calque', action: () => console.log('Lock layer') },
-        { label: 'Aligner les calques', action: () => console.log('Align layers') },
-      ]
+        { label: 'Fusionner les calques', shortcut: 'Ctrl+E', action: actions.mergeLayers },
+        { label: 'Aplatir l\'image', action: actions.flattenImage }
+      ],
     },
     {
       name: 'Sélection',
       items: [
-        { label: 'Tout sélectionner', shortcut: 'Ctrl+A', action: actions.selectAll },
+        { label: 'Tout', shortcut: 'Ctrl+A', action: actions.selectAll },
         { label: 'Désélectionner', shortcut: 'Ctrl+D', action: actions.deselect },
-        { label: 'Ré-sélectionner', action: () => console.log('Reselect') },
-        { label: 'Inverser la sélection', shortcut: 'Ctrl+Shift+I', action: actions.inverse },
-        { separator: true },
-        { label: 'Sélectionner la couche supérieure', action: () => console.log('Select top layer') },
-        { label: 'Sélectionner la couche inférieure', action: () => console.log('Select bottom layer') },
-        { label: 'Sélectionner le sujet', action: () => console.log('Subject select') },
-        { label: 'Sélectionner et masquer', action: () => console.log('Select and mask') },
-        { separator: true },
-        { label: 'Agrandir ou réduire la sélection', action: () => console.log('Grow/Shrink selection') },
-        { label: 'Lissage de la bordure', action: () => console.log('Smooth border') },
-        { separator: true },
-        { label: 'Sélection par couleur', action: () => console.log('Color range') },
-      ]
-    },
-    {
-      name: 'Filtre',
-      items: [
-        { label: 'Galerie de filtres', items: [
-          { label: 'Artistique', action: () => console.log('Artistic') },
-          { label: 'Flou', action: () => console.log('Blur') },
-          { label: 'Déformation', action: () => console.log('Distort') },
-          { label: 'Distorsion', action: () => console.log('Distortion') },
-          { label: 'Esquisse', action: () => console.log('Sketch') },
-          { label: 'Texture', action: () => console.log('Texture') },
-          { label: 'Netteté', action: () => console.log('Sharpen') },
-          { label: 'Flou gaussien', action: () => console.log('Gaussian blur') },
-          { label: 'Netteté', action: () => console.log('Sharpen') },
-          { label: 'Bruit', action: () => console.log('Noise') },
-          { label: 'Rendu', items: [
-            { label: 'Éclairage', action: () => console.log('Lighting') },
-            { label: 'Nuages', action: () => console.log('Clouds') },
-          ]},
-          { label: 'Autres', items: [
-            { label: 'Passe-haut', action: () => console.log('High pass') },
-            { label: 'Décalage', action: () => console.log('Offset') },
-          ]},
-        ]},
-      ]
+        { label: 'Resélectionner', shortcut: 'Shift+Ctrl+D' },
+        { label: 'Intervertir', shortcut: 'Shift+Ctrl+I', action: actions.invertSelection },
+      ],
     },
     {
       name: 'Affichage',
       items: [
         { label: 'Zoom avant', shortcut: 'Ctrl++', action: actions.zoomIn },
         { label: 'Zoom arrière', shortcut: 'Ctrl+-', action: actions.zoomOut },
-        { label: 'Adapter à l\'écran', action: actions.fitOnScreen },
-        { label: 'Afficher les pixels réels', shortcut: 'Ctrl+0', action: actions.actualPixels },
+        { label: 'Adapter à l\'écran', shortcut: 'Ctrl+0', action: actions.fitOnScreen },
+        { label: '100%', shortcut: 'Ctrl+1', action: actions.actualSize },
         { separator: true },
-        { label: 'Afficher les règles', shortcut: 'Ctrl+R', action: actions.showRulers },
-        { label: 'Afficher / masquer la grille', shortcut: 'Ctrl+\'', action: actions.showGrid },
-        { label: 'Afficher / masquer les repères', action: actions.showGuides },
-        { label: 'Magnétisme des repères', action: actions.snapToGuides },
-        { separator: true },
-        { label: 'Mode plein écran', shortcut: 'F', action: actions.fullScreen },
-        { label: 'Interface claire / sombre', action: actions.toggleTheme },
-        { separator: true },
-        { label: 'Afficher les calques / masques actifs uniquement', action: actions.showActiveLayersOnly },
-      ]
+        { label: 'Règles', shortcut: 'Ctrl+R', action: actions.showRulers },
+        { label: 'Grille', shortcut: 'Ctrl+\'', action: actions.showGrid },
+        { label: 'Repères', shortcut: 'Ctrl+;', action: actions.showGuides },
+      ],
     },
     {
       name: 'Fenêtre',
       items: [
-        { label: 'Disposition horizontale', action: () => console.log('Horizontal layout') },
-        { label: 'Disposition verticale', action: () => console.log('Vertical layout') },
+        { label: 'Espace de travail' },
         { separator: true },
-        { label: 'Afficher ou masquer les panneaux', items: [
-          { label: 'Calques', shortcut: 'F7', action: () => console.log('Layers panel') },
-          { label: 'Couleur', shortcut: 'F6', action: () => console.log('Color panel') },
-          { label: 'Historique', shortcut: 'F9', action: () => console.log('History panel') },
-          { label: 'Propriétés', action: () => console.log('Properties panel') },
-          { label: 'Texte / Caractère', action: () => console.log('Text/Character panel') },
-          { label: 'Formes', action: () => console.log('Shapes panel') },
-          { label: 'Nuancier', action: () => console.log('Swatches panel') },
-          { label: 'Chemins', action: () => console.log('Paths panel') },
-          { label: 'Informations', action: () => console.log('Info panel') },
-        ]},
-        { separator: true },
-        { label: 'Réinitialiser l\'espace de travail', action: () => console.log('Reset workspace') },
-        { label: 'Créer un nouvel espace de travail personnalisé', action: () => console.log('New custom workspace') },
-      ]
-    },
-    {
-      name: 'Réglages',
-      items: [
-        { label: 'Préférences générales', action: () => console.log('General preferences') },
-        { label: 'Paramètres d\'interface', action: () => console.log('Interface settings') },
-        { label: 'Raccourcis clavier', action: () => console.log('Keyboard shortcuts') },
-        { label: 'Paramètres de performance', action: () => console.log('Performance settings') },
-        { separator: true },
-        { label: 'Réinitialiser les paramètres', action: () => console.log('Reset settings') },
-      ]
+        { label: 'Calques', shortcut: 'F7' },
+        { label: 'Propriétés' },
+        { label: 'Outils' },
+        { label: 'Historique' },
+      ],
     },
     {
       name: 'Aide',
       items: [
-        { label: 'Centre d\'aide', action: () => console.log('Help center') },
-        { label: 'Didacticiels interactifs', action: () => console.log('Interactive tutorials') },
-        { label: 'Recherche de commandes', action: () => console.log('Command search') },
-        { label: 'Vérifier les mises à jour', action: () => console.log('Check for updates') },
-        { label: 'À propos du logiciel', action: () => console.log('About software') },
-        { label: 'Forum / Support technique', action: () => console.log('Forum/Technical support') },
-      ]
+        { label: 'Aide de Photoshop...', shortcut: 'F1' },
+      ],
     },
   ];
 
-  const renderMenuItem = (item: MenuItem, depth = 0, index = 0): React.ReactNode => {
-    if (item.separator) {
-      return <div key={`separator-${depth}-${index}`} className="border-t border-gray-600 my-1" />;
-    }
+  const handleMenuClick = (menuName: string) => {
+    setActiveMenu(activeMenu === menuName ? null : menuName);
+  };
 
-    if (item.items) {
-      return (
-        <div key={`${item.label}-${depth}-${index}`} className="relative group">
-          <button className="w-full text-left px-3 py-1 hover:bg-gray-600 text-xs flex justify-between items-center">
-            <span>{item.label}</span>
-            <span className="text-gray-400">▶</span>
-          </button>
-          <div className="absolute left-full top-0 bg-gray-700 shadow-lg rounded-md py-1 min-w-48 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-50">
-            {item.items.map((subItem, subIndex) => renderMenuItem(subItem, depth + 1, subIndex))}
-          </div>
-        </div>
-      );
+  const MenuItemComponent = ({ item }: { item: MenuItem }) => {
+    if (item.separator) {
+      return <div className="h-px bg-[#505050] my-1" />;
     }
 
     return (
-      <div key={`${item.label}-${depth}-${index}`} className="relative group">
-        <button
-          onClick={item.action}
-          className="w-full text-left px-3 py-1 hover:bg-gray-600 text-xs flex justify-between items-center"
-        >
-          <span>{item.label}</span>
-          {item.shortcut && <span className="text-gray-400 ml-4">{item.shortcut}</span>}
-        </button>
-        {item.description && (
-          <div className="absolute left-full top-0 ml-2 bg-black text-white text-xs px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 max-w-xs whitespace-normal">
-            {item.description}
-          </div>
+      <div
+        className={`px-4 py-1.5 flex items-center justify-between text-xs hover:bg-[#2980b9] text-[#eeeeee] cursor-pointer group ${item.disabled ? 'opacity-50 pointer-events-none' : ''}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (item.action) {
+            item.action();
+            setActiveMenu(null);
+          }
+        }}
+        title={item.description}
+      >
+        <span className="mr-8">{item.label}</span>
+        {item.items ? (
+          <ChevronRight className="w-3 h-3 text-[#aaaaaa]" />
+        ) : (
+          item.shortcut && <span className="text-[#aaaaaa] text-[10px] group-hover:text-white ml-4">{item.shortcut}</span>
         )}
       </div>
     );
   };
 
   return (
-    <div className="bg-gray-800 text-white px-2 py-1 flex items-center text-sm">
+    <div className="flex items-center h-full px-2 space-x-1" ref={menuRef} style={{ fontSize: '11px' }}>
+      <div className="mr-2 flex items-center justify-center p-1">
+        <div className="w-4 h-4 bg-[#001e36] text-[#31a8ff] font-bold flex items-center justify-center text-[9px] border border-[#001e36] rounded-sm">
+          Ps
+        </div>
+      </div>
       {menus.map((menu) => (
-        <div key={menu.name} className="relative group mr-1">
-          <button className="px-3 py-1 hover:bg-gray-700 rounded transition-colors">
+        <div key={menu.name} className="relative">
+          <button
+            className={`px-2 py-1 rounded-sm transition-colors ${activeMenu === menu.name
+                ? 'bg-[#505050] text-white'
+                : 'text-[#cccccc] hover:bg-[#505050] hover:text-white'
+              }`}
+            onClick={() => handleMenuClick(menu.name)}
+            onMouseEnter={() => activeMenu && setActiveMenu(menu.name)}
+          >
             {menu.name}
           </button>
-          <div className="absolute top-full left-0 bg-gray-700 shadow-lg rounded-b-md py-1 min-w-48 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-50">
-            {menu.items.map((item, index) => renderMenuItem(item, 0, index))}
-          </div>
+
+          {activeMenu === menu.name && (
+            <div className="absolute top-full left-0 min-w-[200px] bg-[#3a3a3a] border border-[#111111] shadow-xl z-50 py-1">
+              {menu.items.map((item, index) => (
+                <MenuItemComponent key={index} item={item} />
+              ))}
+            </div>
+          )}
         </div>
       ))}
+
+      <div className="flex-1"></div>
+
+      <div className="flex items-center space-x-3 px-2">
+        <button className="p-1 text-[#aaaaaa] hover:text-white" title="Rechercher (Ctrl+F)">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </button>
+        <div className="w-px h-3 bg-[#505050]"></div>
+        <button className="px-2 py-0.5 bg-[#2980b9] text-white rounded-sm text-[10px] hover:bg-[#3498db]">
+          Partager
+        </button>
+      </div>
     </div>
   );
 };

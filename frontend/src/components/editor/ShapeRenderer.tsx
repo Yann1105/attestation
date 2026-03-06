@@ -63,12 +63,30 @@ const ShapeRenderer: React.FC<ShapeRendererProps> = ({ element, isPerspectiveMod
     };
   };
 
+  // Build filter style
+  const getFilterStyle = () => {
+    if (!element.filter) return {};
+    const { blur = 0, brightness = 100, contrast = 100, grayscale = 0, sepia = 0, hueRotate = 0, saturate = 100 } = element.filter;
+
+    const filters = [];
+    if (blur > 0) filters.push(`blur(${blur}px)`);
+    if (brightness !== 100) filters.push(`brightness(${brightness}%)`);
+    if (contrast !== 100) filters.push(`contrast(${contrast}%)`);
+    if (grayscale > 0) filters.push(`grayscale(${grayscale}%)`);
+    if (sepia > 0) filters.push(`sepia(${sepia}%)`);
+    if (hueRotate !== 0) filters.push(`hue-rotate(${hueRotate}deg)`);
+    if (saturate !== 100) filters.push(`saturate(${saturate}%)`);
+
+    if (filters.length === 0) return {};
+    return { filter: filters.join(' ') };
+  };
+
   // Build border radius style
   const getBorderRadiusStyle = () => {
     if (element.borderRadiusTopLeft !== undefined ||
-        element.borderRadiusTopRight !== undefined ||
-        element.borderRadiusBottomLeft !== undefined ||
-        element.borderRadiusBottomRight !== undefined) {
+      element.borderRadiusTopRight !== undefined ||
+      element.borderRadiusBottomLeft !== undefined ||
+      element.borderRadiusBottomRight !== undefined) {
       return {
         borderTopLeftRadius: `${element.borderRadiusTopLeft || 0}px`,
         borderTopRightRadius: `${element.borderRadiusTopRight || 0}px`,
@@ -175,6 +193,7 @@ const ShapeRenderer: React.FC<ShapeRendererProps> = ({ element, isPerspectiveMod
     ...getStrokeStyle(),
     ...getShadowStyle(),
     ...getBorderRadiusStyle(),
+    ...getFilterStyle(),
   };
 
   // Render pixel-based shape in perspective mode

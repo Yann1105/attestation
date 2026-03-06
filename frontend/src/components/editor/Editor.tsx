@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, Save, Download, HelpCircle, X } from 'lucide-react';
 import { CertificateTemplate, TemplateElement } from '../../types';
 import { templatesApi } from '../../utils/api';
@@ -15,6 +15,7 @@ import { ybFileManager } from '../../utils/YBFileManager';
 import { ProjectData } from '../../utils/YBFileManager';
 import { PSDImporter } from '../../utils/PSDImporter';
 import { AIImporter } from '../../utils/AIImporter';
+import WorkspaceLayout from './layout/WorkspaceLayout';
 
 interface EditorProps {
   onBack: () => void;
@@ -60,9 +61,9 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   // Conditional logging - only when template actually changes
   useEffect(() => {
     if (prevTemplateRef.current &&
-        (prevTemplateRef.current.id !== template.id ||
-         prevTemplateRef.current.elements.length !== template.elements.length)) {
-      console.log('📝 Template state changed:', template.id, 'elements:', template.elements.length);
+      (prevTemplateRef.current.id !== template.id ||
+        prevTemplateRef.current.elements.length !== template.elements.length)) {
+      console.log('ðŸ“ Template state changed:', template.id, 'elements:', template.elements.length);
     }
     prevTemplateRef.current = template;
   }, [template]);
@@ -70,11 +71,12 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log('💥 Editor component UNMOUNTED');
+      console.log('ðŸ’¥ Editor component UNMOUNTED');
     };
   }, []);
 
   const [selectedElement, setSelectedElement] = useState<TemplateElement | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set());
   const [showHelp, setShowHelp] = useState(false);
   const [currentTool, setCurrentTool] = useState<string>('move');
   const [isDragging, setIsDragging] = useState(false);
@@ -144,6 +146,89 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   const [canvasResizeStart, setCanvasResizeStart] = useState({ x: 0, y: 0 });
   const [originalCanvasSize, setOriginalCanvasSize] = useState({ width: 0, height: 0 });
 
+  // Vector Brush State
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentPathPoints, setCurrentPathPoints] = useState<{ x: number; y: number }[]>([]);
+
+  // Grouping Logic
+  const handleGroup = () => {
+    if (selectedElementIds.size < 2) return;
+
+    const selectedElements = template.elements.filter(el => selectedElementIds.has(el.id));
+    if (selectedElements.length === 0) return;
+
+    // Calculate bounding box
+    const minX = Math.min(...selectedElements.map(el => el.x));
+    const minY = Math.min(...selectedElements.map(el => el.y));
+    const maxX = Math.max(...selectedElements.map(el => el.x + el.width));
+    const maxY = Math.max(...selectedElements.map(el => el.y + el.height));
+
+    const groupId = `group-${Date.now()}`;
+    const groupElement: TemplateElement = {
+      id: groupId,
+      type: 'group',
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+      zIndex: Math.max(...selectedElements.map(el => el.zIndex)) + 1,
+      children: selectedElements.map(el => el.id)
+    };
+
+    setTemplate(prev => {
+      // Update children to have parentId
+      const updatedElements = prev.elements.map(el => {
+        if (selectedElementIds.has(el.id)) {
+          return { ...el, parentId: groupId };
+        }
+        return el;
+      });
+      // Add group element
+      const newTemplate = {
+        ...prev,
+        elements: [...updatedElements, groupElement]
+      };
+      saveToHistory(newTemplate);
+      return newTemplate;
+    });
+
+    // Select the new group
+    setSelectedElementIds(new Set([groupId]));
+    setSelectedElement(groupElement);
+  };
+
+  const handleUngroup = () => {
+    if (!selectedElement || selectedElement.type !== 'group' || !selectedElement.children) return;
+
+    const childrenIds = new Set(selectedElement.children);
+    const groupId = selectedElement.id;
+
+    setTemplate(prev => {
+      // Remove group element and clear parentId from children
+      const updatedElements = prev.elements
+        .filter(el => el.id !== groupId)
+        .map(el => {
+          if (childrenIds.has(el.id)) {
+            const { parentId, ...rest } = el;
+            return rest as TemplateElement;
+          }
+          return el;
+        });
+
+      const newTemplate = { ...prev, elements: updatedElements };
+      saveToHistory(newTemplate);
+      return newTemplate;
+    });
+
+    // Select children
+    setSelectedElementIds(childrenIds);
+    if (childrenIds.size > 0) {
+      // Set primary selection to first child
+      const firstChild = template.elements.find(el => childrenIds.has(el.id));
+      setSelectedElement(firstChild || null);
+    }
+  };
+
   // View state
   const [zoom, setZoom] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -182,6 +267,20 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     rightPanelWidth: 320
   };
 
+  // Calculate selection bounds
+  const selectionBounds = useMemo(() => {
+    if (selectedElementIds.size < 2) return null;
+    const selectedElements = template.elements.filter(el => selectedElementIds.has(el.id));
+    if (selectedElements.length === 0) return null;
+
+    const minX = Math.min(...selectedElements.map(el => el.x));
+    const minY = Math.min(...selectedElements.map(el => el.y));
+    const maxX = Math.max(...selectedElements.map(el => el.x + el.width));
+    const maxY = Math.max(...selectedElements.map(el => el.y + el.height));
+
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }, [selectedElementIds, template.elements]);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contentEditableRef = useRef<HTMLDivElement>(null);
@@ -196,123 +295,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   };
 
   // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Track modifier keys
-      if (e.key === 'Shift') {
-        setShiftPressed(true);
-      } else if (e.key === 'Alt') {
-        setAltPressed(true);
-      }
 
-      // Tool shortcuts
-      if (e.key === 'v' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('move');
-      } else if (e.key === 'm' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('marquee-rect');
-      } else if (e.key === 'l' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('lasso');
-      } else if (e.key === 'w' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('quick-select');
-      } else if (e.key === 'c' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('crop');
-      } else if (e.key === 'i' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('eyedropper');
-      } else if (e.key === 'j' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('healing');
-      } else if (e.key === 'b' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('brush');
-      } else if (e.key === 'e' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('eraser');
-      } else if (e.key === 'g' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('gradient');
-      } else if (e.key === 'p' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('pen');
-      } else if (e.key === 'u' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('shape');
-      } else if (e.key === 't' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('text');
-      } else if (e.key === 'h' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('hand');
-      } else if (e.key === 'z' && !e.ctrlKey && !e.altKey) {
-        setCurrentTool('zoom');
-      } else if (e.key === 'x' && !e.ctrlKey && !e.altKey) {
-        // Swap foreground/background colors (simplified)
-        console.log('Swap colors');
-      }
-
-      // Edit shortcuts
-      else if (e.key === 'z' && e.ctrlKey && !e.shiftKey) {
-          handleUndo();
-        } else if (e.key === 'z' && e.ctrlKey && e.shiftKey) {
-          handleRedo();
-        } else if (e.key === 'a' && e.ctrlKey) {
-          handleSelectAll();
-        } else if (e.key === 'd' && e.ctrlKey) {
-          handleDeselect();
-        } else if (e.key === 'x' && e.ctrlKey) {
-          handleCut();
-        } else if (e.key === 'c' && e.ctrlKey) {
-          handleCopy();
-        } else if (e.key === 'v' && e.ctrlKey) {
-          handlePaste();
-        } else if (e.key === 'Delete' || e.key === 'Backspace') {
-           if (isEditPathMode && selectedElement && selectedPathPoints.size > 0) {
-             // Remove selected path points
-             handleRemoveSelectedPathPoints(selectedElement);
-           } else if (selectedElement && !selectedElement.locked) {
-             handleDeleteLayer();
-           }
-         } else if (e.key === 'r' && e.ctrlKey) {
-          handleShowRulers();
-        } else if (e.key === '\'' && e.ctrlKey) {
-          handleShowGrid();
-        } else if (e.key === 'f' && !e.ctrlKey && !e.altKey) {
-          handleFullScreen();
-        } else if (e.key === 'ArrowUp' && selectedElement) {
-          e.preventDefault();
-          const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
-          handleElementUpdate(selectedElement.id, { y: selectedElement.y - delta });
-        } else if (e.key === 'ArrowDown' && selectedElement) {
-          e.preventDefault();
-          const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
-          handleElementUpdate(selectedElement.id, { y: selectedElement.y + delta });
-        } else if (e.key === 'ArrowLeft' && selectedElement) {
-          e.preventDefault();
-          const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
-          handleElementUpdate(selectedElement.id, { x: selectedElement.x - delta });
-        } else if (e.key === 'ArrowRight' && selectedElement) {
-          e.preventDefault();
-          const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
-          handleElementUpdate(selectedElement.id, { x: selectedElement.x + delta });
-        } else if (e.key === '[' && selectedElement) {
-          // Rotate counterclockwise
-          e.preventDefault();
-          const currentRotation = selectedElement.rotation || 0;
-          handleElementUpdate(selectedElement.id, { rotation: currentRotation - 15 });
-        } else if (e.key === ']' && selectedElement) {
-          // Rotate clockwise
-          e.preventDefault();
-          const currentRotation = selectedElement.rotation || 0;
-          handleElementUpdate(selectedElement.id, { rotation: currentRotation + 15 });
-        }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') {
-        setShiftPressed(false);
-      } else if (e.key === 'Alt') {
-        setAltPressed(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, []);
 
   const handleAddElement = useCallback((type: TemplateElement['type'], x?: number, y?: number) => {
     const baseX = x ?? 100;
@@ -568,7 +551,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleToolSelect = (tool: string) => {
     setCurrentTool(tool);
-    // Désélectionner l'élément quand on change d'outil
+    // DÃ©sÃ©lectionner l'Ã©lÃ©ment quand on change d'outil
     if (tool !== 'move') {
       setSelectedElement(null);
       setVisibleControlPoints(new Set());
@@ -705,7 +688,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         e.preventDefault();
         handleTextEditSave();
       }
-      // Pour le texte de paragraphe, Enter crée une nouvelle ligne (comportement par défaut)
+      // Pour le texte de paragraphe, Enter crÃ©e une nouvelle ligne (comportement par dÃ©faut)
     }
   };
 
@@ -729,7 +712,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     }
   };
 
-  // Surveiller les changements de taille du textarea pendant l'édition
+  // Surveiller les changements de taille du textarea pendant l'Ã©dition
   useEffect(() => {
     if (editingElement && editingElement.textType === 'paragraph') {
       const textarea = document.querySelector('.inline-text-editor') as HTMLTextAreaElement;
@@ -751,7 +734,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           }
         };
 
-        const interval = setInterval(checkResize, 100); // Vérifier toutes les 100ms
+        const interval = setInterval(checkResize, 100); // VÃ©rifier toutes les 100ms
 
         return () => {
           clearInterval(interval);
@@ -760,19 +743,189 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     }
   }, [editingElement]);
 
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    // If we are editing text, clicking outside should save it
+    if (editingElement) {
+      handleTextEditSave();
+      return;
+    }
+
+    if (currentTool === 'text') {
+      // ... text logic existing ...
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        setTextCreationStart({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        });
+        setIsCreatingText(true);
+      }
+      return;
+    }
+
+    // Brush Tool Logic (Start Drawing)
+    if (currentTool === 'brush' || currentTool === 'pencil') {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setIsDrawing(true);
+      setCurrentPathPoints([{
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      }]);
+      return;
+    }
+
+    // Shape Creation Logic
+    if (['shape', 'rectangle', 'ellipse', 'polygon', 'star', 'line', 'custom-shape', 'triangle'].includes(currentTool)) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        handleAddElement('shape', x, y);
+      }
+      return;
+    }
+
+    if (currentTool === 'move') {
+      // ... move logic existing ...
+      // Selecting background (clicking empty space)
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) {
+        setDragOffset({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        });
+        // Don't select anything yet, wait to see if it's a drag or click
+      }
+    }
+  };
+
   const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !selectedElement) return;
+    // Brush Tool Logic (Continue Drawing)
+    if (isDrawing && (currentTool === 'brush' || currentTool === 'pencil')) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      setCurrentPathPoints(prev => [...prev, { x, y }]);
+      return;
+    }
 
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    if (isDragging && selectedElement) {
+      // ... existing drag logic ...
+      // Handle element dragging
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
 
-    const x = e.clientX - rect.left - dragOffset.x;
-    const y = e.clientY - rect.top - dragOffset.y;
+      const newX = e.clientX - rect.left - dragOffset.x;
+      const newY = e.clientY - rect.top - dragOffset.y;
 
-    handleElementUpdate(selectedElement.id, { x, y });
+      // Calculate delta
+      const deltaX = newX - selectedElement.x;
+      const deltaY = newY - selectedElement.y;
+
+      // Universal drag logic (handles Single, Multi, and Group selection)
+      setTemplate(prevTemplate => {
+        const newElements = prevTemplate.elements.map(el => {
+          // Check if element is selected or if its parent is selected (recursive check could be added here for nested groups)
+          const isSelected = selectedElementIds.has(el.id);
+          const parentIsSelected = el.parentId && selectedElementIds.has(el.parentId);
+
+          if (isSelected || parentIsSelected) {
+            return {
+              ...el,
+              x: el.x + deltaX,
+              y: el.y + deltaY
+            };
+          }
+          return el;
+        });
+
+        const newTemplate = { ...prevTemplate, elements: newElements };
+        return newTemplate;
+      });
+
+      // Update selected element reference (local state for delta calculation)
+      setSelectedElement(prev => prev ? ({ ...prev, x: prev.x + deltaX, y: prev.y + deltaY }) : null);
+
+    } else if (isTransforming && selectedElement && originalElement) {
+      // Handle transformation
+      // ... existing transformation logic ...
+      const deltaX = e.clientX - transformStart.x;
+      const deltaY = e.clientY - transformStart.y;
+      handleTransform(deltaX, deltaY, transformHandle);
+    } else if (isDeforming && selectedElement && deformingPointIndex >= 0) {
+      // Handle control point deformation
+      // ... existing deformation logic ...
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const newControlPoints = [...selectedElement.controlPoints!];
+      newControlPoints[deformingPointIndex] = { x: mouseX, y: mouseY };
+
+      // Update path data based on new control points
+      let newPathData = '';
+      if (selectedElement.shapeType === 'triangle') {
+        newPathData = `M${newControlPoints[0].x},${newControlPoints[0].y} L${newControlPoints[1].x},${newControlPoints[1].y} L${newControlPoints[2].x},${newControlPoints[2].y} Z`;
+      } else {
+        // ... (simplified for brevity, assume existing logic)
+        newPathData = generatePolygonPath(newControlPoints);
+      }
+
+      handleElementUpdate(selectedElement.id, {
+        controlPoints: newControlPoints,
+        pathData: newPathData
+      });
+    }
   };
 
   const handleCanvasMouseUp = (e: React.MouseEvent) => {
+    // Brush Tool Logic (End Drawing)
+    if (isDrawing && (currentTool === 'brush' || currentTool === 'pencil')) {
+      setIsDrawing(false);
+      if (currentPathPoints.length < 2) return;
+
+      // Create SVG Path from points
+      const minX = Math.min(...currentPathPoints.map(p => p.x));
+      const minY = Math.min(...currentPathPoints.map(p => p.y));
+      const maxX = Math.max(...currentPathPoints.map(p => p.x));
+      const maxY = Math.max(...currentPathPoints.map(p => p.y));
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      // Normalize points relative to bounding box
+      const pathData = `M ${currentPathPoints.map(p => `${p.x - minX},${p.y - minY}`).join(' L ')}`;
+
+      const newElement: TemplateElement = {
+        id: `element-${Date.now()}`,
+        type: 'shape',
+        shapeType: 'custom',
+        x: minX,
+        y: minY,
+        width: Math.max(width, 1),
+        height: Math.max(height, 1),
+        zIndex: template.elements.length,
+        pathData: pathData,
+        fillType: 'none',
+        strokeColor: '#000000',
+        strokeWidth: 3,
+        strokeStyle: 'solid',
+        // Filter support (Phase 3)
+        filter: { blur: 0, brightness: 100, contrast: 100 }
+      };
+
+      setTemplate(prev => {
+        const newTemplate = { ...prev, elements: [...prev.elements, newElement] };
+        saveToHistory(newTemplate);
+        return newTemplate;
+      });
+      setCurrentPathPoints([]);
+      return;
+    }
+
     if (isCreatingText && textCreationStart) {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -783,18 +936,17 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       const startX = textCreationStart.x;
       const startY = textCreationStart.y;
 
-      // Calculate the distance moved
       const deltaX = Math.abs(endX - startX);
       const deltaY = Math.abs(endY - startY);
 
-      // If moved less than 10 pixels, it's a click - create point text
       if (deltaX < 10 && deltaY < 10) {
+        // ... Click (Point Text) ...
         const newElement: TemplateElement = {
           id: `element-${Date.now()}`,
           type: 'text',
           x: startX,
           y: startY,
-          width: 200, // Auto-sizing will handle this
+          width: 200,
           height: 30,
           zIndex: template.elements.length,
           content: 'Texte ponctuel',
@@ -802,21 +954,19 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           fontFamily: 'Arial',
           color: '#000000',
           textAlign: 'left',
-          textType: 'point', // New property to distinguish text types
+          textType: 'point',
         };
 
-        const newTemplate = {
-          ...template,
-          elements: [...template.elements, newElement],
-        };
-
-        setTemplate(newTemplate);
-        saveToHistory(newTemplate);
+        setTemplate(prev => {
+          const newTemplate = { ...prev, elements: [...prev.elements, newElement] };
+          saveToHistory(newTemplate);
+          return newTemplate;
+        });
         setSelectedElement(newElement);
         setEditingElement(newElement);
         setEditingText(newElement.content || '');
       } else {
-        // It's a drag - create paragraph text
+        // ... Drag (Paragraph Text) ...
         const x = Math.min(startX, endX);
         const y = Math.min(startY, endY);
         const width = Math.abs(endX - startX);
@@ -835,16 +985,14 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           fontFamily: 'Arial',
           color: '#000000',
           textAlign: 'left',
-          textType: 'paragraph', // New property to distinguish text types
+          textType: 'paragraph',
         };
 
-        const newTemplate = {
-          ...template,
-          elements: [...template.elements, newElement],
-        };
-
-        setTemplate(newTemplate);
-        saveToHistory(newTemplate);
+        setTemplate(prev => {
+          const newTemplate = { ...prev, elements: [...prev.elements, newElement] };
+          saveToHistory(newTemplate);
+          return newTemplate;
+        });
         setSelectedElement(newElement);
         setEditingElement(newElement);
         setEditingText(newElement.content || '');
@@ -852,47 +1000,18 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
       setIsCreatingText(false);
       setTextCreationStart(null);
+      return;
     }
 
     setIsDragging(false);
+    setIsTransforming(false);
+    setIsSkewing(false);
+    setIsDeforming(false);
+    setIsEdgeResizing(false);
   };
 
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
 
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
 
-    if (currentTool === 'text') {
-      // Start text creation
-      setIsCreatingText(true);
-      setTextCreationStart({ x, y });
-    } else if (['shape', 'rectangle', 'ellipse', 'polygon', 'star', 'line', 'custom-shape'].includes(currentTool)) {
-      handleAddElement('shape', x, y);
-    } else if (currentTool === 'triangle') {
-      handleAddElement('shape', x, y);
-    } else if (currentTool === 'move') {
-      if (isEditPathMode) {
-        // Handle edit path mode clicks
-        handleCanvasClickInEditMode(e);
-      } else {
-        // Find element under cursor
-        const clickedElement = template.elements.find(element =>
-          x >= element.x && x <= element.x + element.width &&
-          y >= element.y && y <= element.y + element.height
-        );
-
-        if (clickedElement) {
-          setSelectedElement(clickedElement);
-          setIsDragging(true);
-          setDragOffset({ x: x - clickedElement.x, y: y - clickedElement.y });
-        } else {
-          setSelectedElement(null);
-        }
-      }
-    }
-  };
 
   const handleCanvasDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -961,10 +1080,40 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
 
-      const x = e.clientX - rect.left - dragOffset.x;
-      const y = e.clientY - rect.top - dragOffset.y;
+      const newX = e.clientX - rect.left - dragOffset.x;
+      const newY = e.clientY - rect.top - dragOffset.y;
 
-      handleElementUpdate(selectedElement.id, { x, y });
+      // Calculate delta
+      const deltaX = newX - selectedElement.x;
+      const deltaY = newY - selectedElement.y;
+
+      // Universal drag logic (handles Single, Multi, and Group selection)
+      setTemplate(prevTemplate => {
+        const newElements = prevTemplate.elements.map(el => {
+          // Check if element is selected or if its parent is selected (recursive check could be added here for nested groups)
+          const isSelected = selectedElementIds.has(el.id);
+          const parentIsSelected = el.parentId && selectedElementIds.has(el.parentId);
+
+          if (isSelected || parentIsSelected) {
+            return {
+              ...el,
+              x: el.x + deltaX,
+              y: el.y + deltaY
+            };
+          }
+          return el;
+        });
+
+        const newTemplate = { ...prevTemplate, elements: newElements };
+        return newTemplate;
+      });
+
+      // Update selected element reference (local state for delta calculation)
+      setSelectedElement(prev => prev ? ({ ...prev, x: prev.x + deltaX, y: prev.y + deltaY }) : null);
+
+      // Update drag offset (optimization: usually not needed if we track delta, but good for stability)
+      // Actually we calculate delta from DragOffset, so we don't update DragOffset, we update the element position which changes the delta next frame.
+
     } else if (isTransforming && selectedElement && originalElement) {
       // Handle transformation
       const deltaX = e.clientX - transformStart.x;
@@ -1164,7 +1313,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       const angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI);
       let finalAngle = (originalElement.rotation || 0) + angle;
 
-      // Apply Shift modifier for 15° steps
+      // Apply Shift modifier for 15Â° steps
       if (shiftPressed) {
         finalAngle = Math.round(finalAngle / 15) * 15;
       }
@@ -1627,7 +1776,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   const isPointOnShape = (element: TemplateElement, x: number, y: number): boolean => {
     // Simple bounding box check for now - could be enhanced with proper shape intersection
     return x >= element.x && x <= element.x + element.width &&
-           y >= element.y && y <= element.y + element.height;
+      y >= element.y && y <= element.y + element.height;
   };
 
   const handleEdgeResize = (deltaX: number, deltaY: number, edge: string, element: TemplateElement) => {
@@ -1722,7 +1871,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     if (relativePoints.length >= 3) {
       let path = `M${relativePoints[0].x},${relativePoints[0].y}`;
 
-      // Connect points with smooth cubic Bézier curves for higher quality
+      // Connect points with smooth cubic BÃ©zier curves for higher quality
       for (let i = 1; i < relativePoints.length; i++) {
         const prevPoint = relativePoints[i - 1];
         const currentPoint = relativePoints[i];
@@ -1774,7 +1923,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       // Prepare template data for API
       const templateData = {
         name: template.name,
-        description: `Template créé le ${new Date().toLocaleDateString()}`,
+        description: `Template crÃ©Ã© le ${new Date().toLocaleDateString()}`,
         type: template.type,
         elements: template.elements,
         canvasData: template.canvasData || undefined, // Convert empty string to undefined
@@ -1794,7 +1943,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         // Update existing template
         savedTemplate = await templatesApi.update(template.id, templateData);
         console.log('Template updated:', savedTemplate);
-        notifications.success('Template modifié avec succès!', 'Les modifications ont été enregistrées.');
+        notifications.success('Template modifiÃ© avec succÃ¨s!', 'Les modifications ont Ã©tÃ© enregistrÃ©es.');
       } else {
         console.log('Creating new template');
         // Create new template
@@ -1810,7 +1959,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           };
         });
 
-        notifications.success('Template sauvegardé avec succès!', 'Le template a été enregistré et est maintenant disponible dans la liste des templates.');
+        notifications.success('Template sauvegardÃ© avec succÃ¨s!', 'Le template a Ã©tÃ© enregistrÃ© et est maintenant disponible dans la liste des templates.');
       }
     } catch (error) {
       console.error('Error saving template:', error);
@@ -1832,15 +1981,15 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           <div class="space-y-3">
             <label class="flex items-center">
               <input type="radio" name="format" value="png" checked class="mr-2">
-              <span>PNG - Image transparente haute qualité</span>
+              <span>PNG - Image transparente haute qualitÃ©</span>
             </label>
             <label class="flex items-center">
               <input type="radio" name="format" value="jpg" class="mr-2">
-              <span>JPG - Image compressée pour le web</span>
+              <span>JPG - Image compressÃ©e pour le web</span>
             </label>
             <label class="flex items-center">
               <input type="radio" name="format" value="pdf" class="mr-2">
-              <span>PDF - Document haute qualité pour impression</span>
+              <span>PDF - Document haute qualitÃ© pour impression</span>
             </label>
           </div>
           <div class="mt-4 flex justify-end space-x-2">
@@ -1887,7 +2036,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       if (format === 'pdf') {
         // For PDF export, we'd need a library like jsPDF
         // For now, show a message
-        notifications.warning('Export PDF', 'L\'exportation PDF nécessite une bibliothèque supplémentaire. Exportation PNG à la place.');
+        notifications.warning('Export PDF', 'L\'exportation PDF nÃ©cessite une bibliothÃ¨que supplÃ©mentaire. Exportation PNG Ã  la place.');
         format = 'png';
       }
 
@@ -1902,7 +2051,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          notifications.success('Export réussi', `Le document a été exporté en ${format.toUpperCase()}.`);
+          notifications.success('Export rÃ©ussi', `Le document a Ã©tÃ© exportÃ© en ${format.toUpperCase()}.`);
         }
       }, format === 'jpg' ? 'image/jpeg' : 'image/png', format === 'jpg' ? 0.8 : 1.0);
     };
@@ -1922,7 +2071,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   // const handleToolSelect = (tool: string) => { // Unused
   //   setCurrentTool(tool);
-  //   // Désélectionner l'élément quand on change d'outil
+  //   // DÃ©sÃ©lectionner l'Ã©lÃ©ment quand on change d'outil
   //   if (tool !== 'move') {
   //     setSelectedElement(null);
   //     setVisibleControlPoints(new Set());
@@ -1957,18 +2106,18 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   const handleZoomIn = () => {
     const newZoom = Math.min(zoom * 1.2, 5); // Max 500%
     setZoom(newZoom);
-    notifications.success('Zoom avant', `Zoom à ${Math.round(newZoom * 100)}%`);
+    notifications.success('Zoom avant', `Zoom Ã  ${Math.round(newZoom * 100)}%`);
   };
 
   const handleZoomOut = () => {
     const newZoom = Math.max(zoom / 1.2, 0.1); // Min 10%
     setZoom(newZoom);
-    notifications.success('Zoom arrière', `Zoom à ${Math.round(newZoom * 100)}%`);
+    notifications.success('Zoom arriÃ¨re', `Zoom Ã  ${Math.round(newZoom * 100)}%`);
   };
 
   const handleActualPixels = () => {
     setZoom(1);
-    notifications.success('Zoom ajusté', 'Affichage à 100% (pixels réels).');
+    notifications.success('Zoom ajustÃ©', 'Affichage Ã  100% (pixels rÃ©els).');
   };
 
   // View menu handlers
@@ -1985,43 +2134,43 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     const fitZoom = Math.min(zoomX, zoomY, 1); // Don't zoom in beyond 100%
 
     setZoom(fitZoom);
-    notifications.success('Adapté à l\'écran', `Zoom ajusté à ${Math.round(fitZoom * 100)}%.`);
+    notifications.success('AdaptÃ© Ã  l\'Ã©cran', `Zoom ajustÃ© Ã  ${Math.round(fitZoom * 100)}%.`);
   };
 
 
   const handleShowRulers = () => {
     setShowRulers(!showRulers);
-    notifications.success(showRulers ? 'Règles masquées' : 'Règles affichées');
+    notifications.success(showRulers ? 'RÃ¨gles masquÃ©es' : 'RÃ¨gles affichÃ©es');
   };
 
   const handleShowGrid = () => {
     setShowGrid(!showGrid);
-    notifications.success(showGrid ? 'Grille masquée' : 'Grille affichée');
+    notifications.success(showGrid ? 'Grille masquÃ©e' : 'Grille affichÃ©e');
   };
 
   const handleShowGuides = () => {
     setShowGuides(!showGuides);
-    notifications.success(showGuides ? 'Repères masqués' : 'Repères affichés');
+    notifications.success(showGuides ? 'RepÃ¨res masquÃ©s' : 'RepÃ¨res affichÃ©s');
   };
 
   const handleSnapToGuides = () => {
     setSnapToGuides(!snapToGuides);
-    notifications.success(snapToGuides ? 'Magnétisme désactivé' : 'Magnétisme activé');
+    notifications.success(snapToGuides ? 'MagnÃ©tisme dÃ©sactivÃ©' : 'MagnÃ©tisme activÃ©');
   };
 
   const handleFullScreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => {
         setIsFullScreen(true);
-        notifications.success('Mode plein écran activé');
+        notifications.success('Mode plein Ã©cran activÃ©');
       }).catch(err => {
         console.error('Error entering fullscreen:', err);
-        notifications.error('Erreur', 'Impossible d\'activer le mode plein écran');
+        notifications.error('Erreur', 'Impossible d\'activer le mode plein Ã©cran');
       });
     } else {
       document.exitFullscreen().then(() => {
         setIsFullScreen(false);
-        notifications.success('Mode plein écran désactivé');
+        notifications.success('Mode plein Ã©cran dÃ©sactivÃ©');
       });
     }
   };
@@ -2049,7 +2198,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       }
     }
 
-    notifications.success('Thème changé', `Interface ${nextTheme === 'auto' ? 'automatique' : nextTheme === 'dark' ? 'sombre' : 'claire'}`);
+    notifications.success('ThÃ¨me changÃ©', `Interface ${nextTheme === 'auto' ? 'automatique' : nextTheme === 'dark' ? 'sombre' : 'claire'}`);
   };
 
   const handleShowActiveLayersOnly = () => {
@@ -2059,7 +2208,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleToggleCanvasRatioLock = () => {
     setLockCanvasRatio(!lockCanvasRatio);
-    notifications.success(lockCanvasRatio ? 'Proportions du canvas déverrouillées' : 'Proportions du canvas verrouillées');
+    notifications.success(lockCanvasRatio ? 'Proportions du canvas dÃ©verrouillÃ©es' : 'Proportions du canvas verrouillÃ©es');
   };
 
   // Image menu handlers
@@ -2076,7 +2225,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           height: newHeight
         }));
         saveToHistory({ ...template, width: newWidth, height: newHeight });
-        notifications.success('Taille de l\'image modifiée', `Nouvelle taille: ${newWidth}x${newHeight}px`);
+        notifications.success('Taille de l\'image modifiÃ©e', `Nouvelle taille: ${newWidth}x${newHeight}px`);
       } else {
         notifications.error('Dimensions invalides', 'Veuillez entrer des valeurs positives.');
       }
@@ -2089,105 +2238,105 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   };
 
   const handleColorModeRGB = () => {
-    notifications.success('Mode couleur RVB', 'Le mode couleur RVB est déjà actif.');
+    notifications.success('Mode couleur RVB', 'Le mode couleur RVB est dÃ©jÃ  actif.');
   };
 
   const handleColorModeCMYK = () => {
-    notifications.warning('Mode couleur CMJN', 'Le mode CMJN n\'est pas encore supporté dans cet éditeur.');
+    notifications.warning('Mode couleur CMJN', 'Le mode CMJN n\'est pas encore supportÃ© dans cet Ã©diteur.');
   };
 
   const handleColorModeGrayscale = () => {
-    notifications.warning('Mode niveaux de gris', 'La conversion en niveaux de gris n\'est pas encore implémentée.');
+    notifications.warning('Mode niveaux de gris', 'La conversion en niveaux de gris n\'est pas encore implÃ©mentÃ©e.');
   };
 
   const handleBrightnessContrast = () => {
     if (selectedElement) {
-      const brightness = prompt('Luminosité (-100 à 100):', '0');
-      const contrast = prompt('Contraste (-100 à 100):', '0');
+      const brightness = prompt('LuminositÃ© (-100 Ã  100):', '0');
+      const contrast = prompt('Contraste (-100 Ã  100):', '0');
       if (brightness !== null && contrast !== null) {
         // For now, just show notification - full implementation would require canvas manipulation
-        notifications.success('Luminosité/Contraste', `Appliqué: Luminosité ${brightness}, Contraste ${contrast}`);
+        notifications.success('LuminositÃ©/Contraste', `AppliquÃ©: LuminositÃ© ${brightness}, Contraste ${contrast}`);
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleLevels = () => {
     if (selectedElement) {
-      notifications.warning('Niveaux', 'L\'ajustement des niveaux sera bientôt disponible.');
+      notifications.warning('Niveaux', 'L\'ajustement des niveaux sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleCurves = () => {
     if (selectedElement) {
-      notifications.warning('Courbes', 'L\'ajustement des courbes sera bientôt disponible.');
+      notifications.warning('Courbes', 'L\'ajustement des courbes sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleColorBalance = () => {
     if (selectedElement) {
-      notifications.warning('Balance des couleurs', 'L\'ajustement de la balance des couleurs sera bientôt disponible.');
+      notifications.warning('Balance des couleurs', 'L\'ajustement de la balance des couleurs sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleHueSaturation = () => {
     if (selectedElement) {
-      const hue = prompt('Teinte (-180 à 180):', '0');
-      const saturation = prompt('Saturation (-100 à 100):', '0');
+      const hue = prompt('Teinte (-180 Ã  180):', '0');
+      const saturation = prompt('Saturation (-100 Ã  100):', '0');
       if (hue !== null && saturation !== null) {
-        notifications.success('Teinte/Saturation', `Appliqué: Teinte ${hue}, Saturation ${saturation}`);
+        notifications.success('Teinte/Saturation', `AppliquÃ©: Teinte ${hue}, Saturation ${saturation}`);
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleSelectiveColor = () => {
     if (selectedElement) {
-      notifications.warning('Correction sélective', 'La correction sélective sera bientôt disponible.');
+      notifications.warning('Correction sÃ©lective', 'La correction sÃ©lective sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleBlackAndWhite = () => {
     if (selectedElement) {
-      notifications.warning('Noir et blanc', 'La conversion noir et blanc sera bientôt disponible.');
+      notifications.warning('Noir et blanc', 'La conversion noir et blanc sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer les réglages.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer les rÃ©glages.');
     }
   };
 
   const handleAutoCrop = () => {
-    notifications.warning('Rognage automatique', 'Le rognage automatique sera bientôt disponible.');
+    notifications.warning('Rognage automatique', 'Le rognage automatique sera bientÃ´t disponible.');
   };
 
   const handleImageRotation = () => {
     if (selectedElement) {
-      const angle = prompt('Angle de rotation (degrés):', '0');
+      const angle = prompt('Angle de rotation (degrÃ©s):', '0');
       if (angle !== null) {
         const rotation = parseFloat(angle);
         handleElementUpdate(selectedElement.id, { rotation });
-        notifications.success('Rotation appliquée', `L'élément a été tourné de ${rotation} degrés.`);
+        notifications.success('Rotation appliquÃ©e', `L'Ã©lÃ©ment a Ã©tÃ© tournÃ© de ${rotation} degrÃ©s.`);
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à tourner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  tourner.');
     }
   };
 
   const handleInvertColors = () => {
     if (selectedElement) {
       // Simple inversion by negating colors - in a real implementation, this would use canvas filters
-      notifications.warning('Inversion des couleurs', 'L\'inversion des couleurs sera bientôt disponible.');
+      notifications.warning('Inversion des couleurs', 'L\'inversion des couleurs sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour inverser les couleurs.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour inverser les couleurs.');
     }
   };
 
@@ -2195,21 +2344,21 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   const handleNewLayer = () => {
     // Add a new empty layer (could be a shape or text element)
     handleAddElement('shape', 100, 100);
-    notifications.success('Nouveau calque', 'Un nouveau calque a été ajouté.');
+    notifications.success('Nouveau calque', 'Un nouveau calque a Ã©tÃ© ajoutÃ©.');
   };
 
   const handleNewGroup = () => {
-    notifications.warning('Groupe de calques', 'La création de groupes de calques sera bientôt disponible.');
+    notifications.warning('Groupe de calques', 'La crÃ©ation de groupes de calques sera bientÃ´t disponible.');
   };
 
   const handleTextLayer = () => {
     handleAddElement('text', 100, 100);
-    notifications.success('Calque de texte', 'Un nouveau calque de texte a été ajouté.');
+    notifications.success('Calque de texte', 'Un nouveau calque de texte a Ã©tÃ© ajoutÃ©.');
   };
 
   const handleShapeLayer = () => {
     handleAddElement('shape', 100, 100);
-    notifications.success('Calque de forme', 'Un nouveau calque de forme a été ajouté.');
+    notifications.success('Calque de forme', 'Un nouveau calque de forme a Ã©tÃ© ajoutÃ©.');
   };
 
   const handleDuplicateLayer = () => {
@@ -2231,9 +2380,9 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       setTemplate(newTemplate);
       saveToHistory(newTemplate);
       setSelectedElement(newElement);
-      notifications.success('Calque dupliqué', 'Le calque sélectionné a été dupliqué.');
+      notifications.success('Calque dupliquÃ©', 'Le calque sÃ©lectionnÃ© a Ã©tÃ© dupliquÃ©.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque à dupliquer.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque Ã  dupliquer.');
     }
   };
 
@@ -2246,70 +2395,70 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       setTemplate(newTemplate);
       saveToHistory(newTemplate);
       setSelectedElement(null);
-      notifications.success('Calque supprimé', 'Le calque sélectionné a été supprimé.');
+      notifications.success('Calque supprimÃ©', 'Le calque sÃ©lectionnÃ© a Ã©tÃ© supprimÃ©.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque à supprimer.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque Ã  supprimer.');
     }
   };
 
   const handleMergeLayers = () => {
     if (template.elements.length > 1) {
-      notifications.warning('Fusion des calques', 'La fusion des calques sera bientôt disponible.');
+      notifications.warning('Fusion des calques', 'La fusion des calques sera bientÃ´t disponible.');
     } else {
-      notifications.warning('Fusion impossible', 'Au moins deux calques sont nécessaires pour la fusion.');
+      notifications.warning('Fusion impossible', 'Au moins deux calques sont nÃ©cessaires pour la fusion.');
     }
   };
 
   const handleFlattenImage = () => {
-    notifications.warning('Aplatir l\'image', 'L\'aplatissement de l\'image sera bientôt disponible.');
+    notifications.warning('Aplatir l\'image', 'L\'aplatissement de l\'image sera bientÃ´t disponible.');
   };
 
   const handleLayerMask = () => {
     if (selectedElement) {
-      notifications.warning('Masque de fusion', 'Les masques de fusion seront bientôt disponibles.');
+      notifications.warning('Masque de fusion', 'Les masques de fusion seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour ajouter un masque.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour ajouter un masque.');
     }
   };
 
   const handleClippingMask = () => {
     if (selectedElement) {
-      notifications.warning('Masque d\'écrêtage', 'Les masques d\'écrêtage seront bientôt disponibles.');
+      notifications.warning('Masque d\'Ã©crÃªtage', 'Les masques d\'Ã©crÃªtage seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour créer un masque d\'écrêtage.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour crÃ©er un masque d\'Ã©crÃªtage.');
     }
   };
 
   // Layer styles handlers
   const handleDropShadow = () => {
     if (selectedElement) {
-      notifications.warning('Ombre portée', 'Les styles de calque seront bientôt disponibles.');
+      notifications.warning('Ombre portÃ©e', 'Les styles de calque seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
   const handleInnerGlow = () => {
     if (selectedElement) {
-      notifications.warning('Lueur interne', 'Les styles de calque seront bientôt disponibles.');
+      notifications.warning('Lueur interne', 'Les styles de calque seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
   const handleOuterGlow = () => {
     if (selectedElement) {
-      notifications.warning('Lueur externe', 'Les styles de calque seront bientôt disponibles.');
+      notifications.warning('Lueur externe', 'Les styles de calque seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
   const handleBevelEmboss = () => {
     if (selectedElement) {
-      notifications.warning('Biseautage / Estampage', 'Les styles de calque seront bientôt disponibles.');
+      notifications.warning('Biseautage / Estampage', 'Les styles de calque seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
@@ -2318,26 +2467,26 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       const color = prompt('Couleur d\'incrustation (hex, rgb, ou nom):', '#ff0000');
       if (color) {
         handleElementUpdate(selectedElement.id, { backgroundColor: color });
-        notifications.success('Incrustation de couleur appliquée', `La couleur ${color} a été appliquée.`);
+        notifications.success('Incrustation de couleur appliquÃ©e', `La couleur ${color} a Ã©tÃ© appliquÃ©e.`);
       }
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
   const handleGradientOverlay = () => {
     if (selectedElement) {
-      notifications.warning('Incrustation de dégradé', 'Les dégradés seront bientôt disponibles.');
+      notifications.warning('Incrustation de dÃ©gradÃ©', 'Les dÃ©gradÃ©s seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
   const handlePatternOverlay = () => {
     if (selectedElement) {
-      notifications.warning('Incrustation de motif', 'Les motifs seront bientôt disponibles.');
+      notifications.warning('Incrustation de motif', 'Les motifs seront bientÃ´t disponibles.');
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque pour appliquer un style.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque pour appliquer un style.');
     }
   };
 
@@ -2345,20 +2494,62 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     if (selectedElement) {
       handleElementUpdate(selectedElement.id, { locked: !selectedElement.locked });
       notifications.success(
-        'Verrouillage ' + (selectedElement.locked ? 'désactivé' : 'activé'),
-        `Le calque a été ${selectedElement.locked ? 'déverrouillé' : 'verrouillé'}.`
+        'Verrouillage ' + (selectedElement.locked ? 'dÃ©sactivÃ©' : 'activÃ©'),
+        `Le calque a Ã©tÃ© ${selectedElement.locked ? 'dÃ©verrouillÃ©' : 'verrouillÃ©'}.`
       );
     } else {
-      notifications.warning('Aucun calque sélectionné', 'Veuillez sélectionner un calque à verrouiller.');
+      notifications.warning('Aucun calque sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un calque Ã  verrouiller.');
     }
   };
 
   const handleAlignLayers = () => {
-    if (template.elements.length > 1) {
-      notifications.warning('Alignement des calques', 'L\'alignement des calques sera bientôt disponible.');
-    } else {
-      notifications.warning('Alignement impossible', 'Au moins deux calques sont nécessaires pour l\'alignement.');
+    if (selectedElementIds.size < 2) {
+      notifications.warning('Alignement impossible', 'Veuillez sÃ©lectionner au moins deux calques.');
+      return;
     }
+    // Context menu or panel should trigger specific alignment
+    notifications.info('Alignement', 'Utilisez les boutons d\'alignement dans le panneau PropriÃ©tÃ©s.');
+  };
+
+  const handleAlignElements = (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
+    if (selectedElementIds.size < 2) return;
+
+    const selectedElements = template.elements.filter(el => selectedElementIds.has(el.id));
+    if (selectedElements.length === 0) return;
+
+    // Calculate bounding box
+    const minX = Math.min(...selectedElements.map(el => el.x));
+    const maxX = Math.max(...selectedElements.map(el => el.x + el.width));
+    const minY = Math.min(...selectedElements.map(el => el.y));
+    const maxY = Math.max(...selectedElements.map(el => el.y + el.height));
+    const boxWidth = maxX - minX;
+    const boxHeight = maxY - minY;
+    const boxCenterX = minX + boxWidth / 2;
+    const boxCenterY = minY + boxHeight / 2;
+
+    setTemplate(prev => {
+      const newElements = prev.elements.map(el => {
+        if (selectedElementIds.has(el.id)) {
+          let newX = el.x;
+          let newY = el.y;
+
+          switch (alignment) {
+            case 'left': newX = minX; break;
+            case 'center': newX = boxCenterX - el.width / 2; break;
+            case 'right': newX = maxX - el.width; break;
+            case 'top': newY = minY; break;
+            case 'middle': newY = boxCenterY - el.height / 2; break;
+            case 'bottom': newY = maxY - el.height; break;
+          }
+          return { ...el, x: newX, y: newY };
+        }
+        return el;
+      });
+
+      const newTemplate = { ...prev, elements: newElements };
+      saveToHistory(newTemplate);
+      return newTemplate;
+    });
   };
 
   // Selection menu handlers
@@ -2366,11 +2557,11 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     // For now, just select the first element if none is selected
     if (!selectedElement && template.elements.length > 0) {
       setSelectedElement(template.elements[0]);
-      notifications.success('Ré-sélection', 'Le premier élément a été sélectionné.');
+      notifications.success('RÃ©-sÃ©lection', 'Le premier Ã©lÃ©ment a Ã©tÃ© sÃ©lectionnÃ©.');
     } else if (selectedElement) {
-      notifications.success('Ré-sélection', 'L\'élément est déjà sélectionné.');
+      notifications.success('RÃ©-sÃ©lection', 'L\'Ã©lÃ©ment est dÃ©jÃ  sÃ©lectionnÃ©.');
     } else {
-      notifications.warning('Aucun élément', 'Il n\'y a aucun élément à sélectionner.');
+      notifications.warning('Aucun Ã©lÃ©ment', 'Il n\'y a aucun Ã©lÃ©ment Ã  sÃ©lectionner.');
     }
   };
 
@@ -2381,9 +2572,9 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         (prev.zIndex > current.zIndex) ? prev : current
       );
       setSelectedElement(topElement);
-      notifications.success('Couche supérieure sélectionnée', `L'élément "${topElement.type}" a été sélectionné.`);
+      notifications.success('Couche supÃ©rieure sÃ©lectionnÃ©e', `L'Ã©lÃ©ment "${topElement.type}" a Ã©tÃ© sÃ©lectionnÃ©.`);
     } else {
-      notifications.warning('Aucun élément', 'Il n\'y a aucun élément dans le document.');
+      notifications.warning('Aucun Ã©lÃ©ment', 'Il n\'y a aucun Ã©lÃ©ment dans le document.');
     }
   };
 
@@ -2394,34 +2585,34 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         (prev.zIndex < current.zIndex) ? prev : current
       );
       setSelectedElement(bottomElement);
-      notifications.success('Couche inférieure sélectionnée', `L'élément "${bottomElement.type}" a été sélectionné.`);
+      notifications.success('Couche infÃ©rieure sÃ©lectionnÃ©e', `L'Ã©lÃ©ment "${bottomElement.type}" a Ã©tÃ© sÃ©lectionnÃ©.`);
     } else {
-      notifications.warning('Aucun élément', 'Il n\'y a aucun élément dans le document.');
+      notifications.warning('Aucun Ã©lÃ©ment', 'Il n\'y a aucun Ã©lÃ©ment dans le document.');
     }
   };
 
   const handleSubjectSelect = () => {
-    notifications.warning('Sélection du sujet', 'La sélection automatique du sujet sera bientôt disponible.');
+    notifications.warning('SÃ©lection du sujet', 'La sÃ©lection automatique du sujet sera bientÃ´t disponible.');
   };
 
   const handleSelectAndMask = () => {
-    notifications.warning('Sélectionner et masquer', 'L\'outil de sélection et masquage sera bientôt disponible.');
+    notifications.warning('SÃ©lectionner et masquer', 'L\'outil de sÃ©lection et masquage sera bientÃ´t disponible.');
   };
 
   const handleGrowShrinkSelection = () => {
     if (selectedElement) {
-      const action = prompt('Agrandir (+) ou réduire (-) la sélection (pixels):', '10');
+      const action = prompt('Agrandir (+) ou rÃ©duire (-) la sÃ©lection (pixels):', '10');
       if (action !== null) {
         const delta = parseInt(action);
         if (!isNaN(delta)) {
           const newWidth = Math.max(10, selectedElement.width + delta);
           const newHeight = Math.max(10, selectedElement.height + delta);
           handleElementUpdate(selectedElement.id, { width: newWidth, height: newHeight });
-          notifications.success('Sélection modifiée', `La taille de l'élément a été ${delta > 0 ? 'agrandie' : 'réduite'} de ${Math.abs(delta)} pixels.`);
+          notifications.success('SÃ©lection modifiÃ©e', `La taille de l'Ã©lÃ©ment a Ã©tÃ© ${delta > 0 ? 'agrandie' : 'rÃ©duite'} de ${Math.abs(delta)} pixels.`);
         }
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à modifier.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  modifier.');
     }
   };
 
@@ -2432,16 +2623,16 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         const borderRadius = parseInt(radius);
         if (!isNaN(borderRadius) && borderRadius >= 0) {
           handleElementUpdate(selectedElement.id, { borderRadius });
-          notifications.success('Bordure lissée', `Le rayon de bordure a été défini à ${borderRadius}px.`);
+          notifications.success('Bordure lissÃ©e', `Le rayon de bordure a Ã©tÃ© dÃ©fini Ã  ${borderRadius}px.`);
         }
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à modifier.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  modifier.');
     }
   };
 
   const handleColorRange = () => {
-    const color = prompt('Sélectionner par couleur (hex, rgb, ou nom):', '#000000');
+    const color = prompt('SÃ©lectionner par couleur (hex, rgb, ou nom):', '#000000');
     if (color) {
       // Find elements with similar colors (simplified - just text color for now)
       const matchingElements = template.elements.filter(el =>
@@ -2450,9 +2641,9 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
       if (matchingElements.length > 0) {
         setSelectedElement(matchingElements[0]);
-        notifications.success('Sélection par couleur', `${matchingElements.length} élément(s) trouvé(s) avec la couleur ${color}.`);
+        notifications.success('SÃ©lection par couleur', `${matchingElements.length} Ã©lÃ©ment(s) trouvÃ©(s) avec la couleur ${color}.`);
       } else {
-        notifications.warning('Aucun élément trouvé', `Aucun élément avec la couleur ${color} n'a été trouvé.`);
+        notifications.warning('Aucun Ã©lÃ©ment trouvÃ©', `Aucun Ã©lÃ©ment avec la couleur ${color} n'a Ã©tÃ© trouvÃ©.`);
       }
     }
   };
@@ -2460,18 +2651,18 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
   // Transformation handlers
   const handleTransformScale = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à mettre à l\'échelle.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  mettre Ã  l\'Ã©chelle.');
       return;
     }
 
-    const scale = prompt('Facteur d\'échelle (ex: 1.5 pour 150%, 0.5 pour 50%):', '1.0');
+    const scale = prompt('Facteur d\'Ã©chelle (ex: 1.5 pour 150%, 0.5 pour 50%):', '1.0');
     if (scale !== null) {
       const scaleFactor = parseFloat(scale);
       if (!isNaN(scaleFactor) && scaleFactor > 0) {
         const newWidth = selectedElement.width * scaleFactor;
         const newHeight = selectedElement.height * scaleFactor;
         handleElementUpdate(selectedElement.id, { width: newWidth, height: newHeight });
-        notifications.success('Mise à l\'échelle appliquée', `L'élément a été mis à l'échelle par un facteur de ${scaleFactor}.`);
+        notifications.success('Mise Ã  l\'Ã©chelle appliquÃ©e', `L'Ã©lÃ©ment a Ã©tÃ© mis Ã  l'Ã©chelle par un facteur de ${scaleFactor}.`);
       } else {
         notifications.error('Valeur invalide', 'Veuillez entrer un nombre positif.');
       }
@@ -2480,16 +2671,16 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleTransformRotate = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à tourner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  tourner.');
       return;
     }
 
-    const angle = prompt('Angle de rotation (degrés):', '0');
+    const angle = prompt('Angle de rotation (degrÃ©s):', '0');
     if (angle !== null) {
       const rotation = parseFloat(angle);
       if (!isNaN(rotation)) {
         handleElementUpdate(selectedElement.id, { rotation });
-        notifications.success('Rotation appliquée', `L'élément a été tourné de ${rotation} degrés.`);
+        notifications.success('Rotation appliquÃ©e', `L'Ã©lÃ©ment a Ã©tÃ© tournÃ© de ${rotation} degrÃ©s.`);
       } else {
         notifications.error('Valeur invalide', 'Veuillez entrer un nombre valide.');
       }
@@ -2498,18 +2689,18 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleTransformSkew = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à incliner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  incliner.');
       return;
     }
 
-    const skewX = prompt('Inclinaison horizontale (degrés):', '0');
-    const skewY = prompt('Inclinaison verticale (degrés):', '0');
+    const skewX = prompt('Inclinaison horizontale (degrÃ©s):', '0');
+    const skewY = prompt('Inclinaison verticale (degrÃ©s):', '0');
     if (skewX !== null && skewY !== null) {
       const skewXValue = parseFloat(skewX);
       const skewYValue = parseFloat(skewY);
       if (!isNaN(skewXValue) && !isNaN(skewYValue)) {
         handleElementUpdate(selectedElement.id, { skewX: skewXValue, skewY: skewYValue });
-        notifications.success('Inclinaison appliquée', `Inclinaison: X=${skewXValue}°, Y=${skewYValue}°.`);
+        notifications.success('Inclinaison appliquÃ©e', `Inclinaison: X=${skewXValue}Â°, Y=${skewYValue}Â°.`);
       } else {
         notifications.error('Valeurs invalides', 'Veuillez entrer des nombres valides.');
       }
@@ -2518,7 +2709,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleTransformPerspective = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer la perspective.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer la perspective.');
       return;
     }
 
@@ -2546,12 +2737,12 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
       handleElementUpdate(selectedElement.id, { controlPoints: newControlPoints });
     }
 
-    notifications.success(isPerspectiveMode ? 'Mode Perspective désactivé' : 'Mode Perspective activé', isPerspectiveMode ? 'Retour au mode normal.' : 'Vous pouvez maintenant déformer les coins pour créer un effet de perspective.');
+    notifications.success(isPerspectiveMode ? 'Mode Perspective dÃ©sactivÃ©' : 'Mode Perspective activÃ©', isPerspectiveMode ? 'Retour au mode normal.' : 'Vous pouvez maintenant dÃ©former les coins pour crÃ©er un effet de perspective.');
   };
 
   const handleTransformCurvature = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer la courbure.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer la courbure.');
       return;
     }
 
@@ -2581,29 +2772,29 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
           ];
           break;
         default:
-          notifications.warning('Type de forme non supporté', 'La courbure n\'est disponible que pour les rectangles et triangles.');
+          notifications.warning('Type de forme non supportÃ©', 'La courbure n\'est disponible que pour les rectangles et triangles.');
           return;
       }
 
       handleElementUpdate(selectedElement.id, { curvaturePoints: newCurvaturePoints });
     }
 
-    notifications.success(isCurvatureMode ? 'Mode Courbure désactivé' : 'Mode Courbure activé', isCurvatureMode ? 'Retour au mode normal.' : 'Vous pouvez maintenant courber les côtés de la forme.');
+    notifications.success(isCurvatureMode ? 'Mode Courbure dÃ©sactivÃ©' : 'Mode Courbure activÃ©', isCurvatureMode ? 'Retour au mode normal.' : 'Vous pouvez maintenant courber les cÃ´tÃ©s de la forme.');
   };
 
   const handleTransformWarp = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à déformer.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  dÃ©former.');
       return;
     }
 
     // Enable warp mode by setting warp intensity
-    const intensity = prompt('Intensité de la déformation (0-10):', '1');
+    const intensity = prompt('IntensitÃ© de la dÃ©formation (0-10):', '1');
     if (intensity !== null) {
       const warpValue = parseFloat(intensity);
       if (!isNaN(warpValue) && warpValue >= 0 && warpValue <= 10) {
         handleElementUpdate(selectedElement.id, { warpIntensity: warpValue });
-        notifications.success('Déformation appliquée', `Intensité de déformation: ${warpValue}.`);
+        notifications.success('DÃ©formation appliquÃ©e', `IntensitÃ© de dÃ©formation: ${warpValue}.`);
       } else {
         notifications.error('Valeur invalide', 'Veuillez entrer un nombre entre 0 et 10.');
       }
@@ -2612,7 +2803,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
 
   const handleTransformFlipHorizontal = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à retourner horizontalement.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  retourner horizontalement.');
       return;
     }
 
@@ -2620,12 +2811,12 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     const currentScaleX = selectedElement.scaleX || 1;
     const newScaleX = -currentScaleX;
     handleElementUpdate(selectedElement.id, { scaleX: newScaleX });
-    notifications.success('Retourné horizontalement', 'L\'élément a été retourné horizontalement.');
+    notifications.success('RetournÃ© horizontalement', 'L\'Ã©lÃ©ment a Ã©tÃ© retournÃ© horizontalement.');
   };
 
   const handleTransformFlipVertical = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à retourner verticalement.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  retourner verticalement.');
       return;
     }
 
@@ -2633,43 +2824,43 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
     const currentScaleY = selectedElement.scaleY || 1;
     const newScaleY = -currentScaleY;
     handleElementUpdate(selectedElement.id, { scaleY: newScaleY });
-    notifications.success('Retourné verticalement', 'L\'élément a été retourné verticalement.');
+    notifications.success('RetournÃ© verticalement', 'L\'Ã©lÃ©ment a Ã©tÃ© retournÃ© verticalement.');
   };
 
   const handleTransformRotate180 = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à tourner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  tourner.');
       return;
     }
 
     const currentRotation = selectedElement.rotation || 0;
     const newRotation = currentRotation + 180;
     handleElementUpdate(selectedElement.id, { rotation: newRotation });
-    notifications.success('Rotation 180° appliquée', 'L\'élément a été tourné de 180 degrés.');
+    notifications.success('Rotation 180Â° appliquÃ©e', 'L\'Ã©lÃ©ment a Ã©tÃ© tournÃ© de 180 degrÃ©s.');
   };
 
   const handleTransformRotate90CW = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à tourner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  tourner.');
       return;
     }
 
     const currentRotation = selectedElement.rotation || 0;
     const newRotation = currentRotation + 90;
     handleElementUpdate(selectedElement.id, { rotation: newRotation });
-    notifications.success('Rotation 90° horaire appliquée', 'L\'élément a été tourné de 90 degrés dans le sens horaire.');
+    notifications.success('Rotation 90Â° horaire appliquÃ©e', 'L\'Ã©lÃ©ment a Ã©tÃ© tournÃ© de 90 degrÃ©s dans le sens horaire.');
   };
 
   const handleTransformRotate90CCW = () => {
     if (!selectedElement) {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à tourner.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  tourner.');
       return;
     }
 
     const currentRotation = selectedElement.rotation || 0;
     const newRotation = currentRotation - 90;
     handleElementUpdate(selectedElement.id, { rotation: newRotation });
-    notifications.success('Rotation 90° antihoraire appliquée', 'L\'élément a été tourné de 90 degrés dans le sens antihoraire.');
+    notifications.success('Rotation 90Â° antihoraire appliquÃ©e', 'L\'Ã©lÃ©ment a Ã©tÃ© tournÃ© de 90 degrÃ©s dans le sens antihoraire.');
   };
 
   const handleNewFile = () => {
@@ -2704,7 +2895,7 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         .slice(0, 10); // Show last 10
 
       if (recentTemplates.length === 0) {
-        notifications.warning('Aucun template récent', 'Aucun template n\'a été trouvé.');
+        notifications.warning('Aucun template rÃ©cent', 'Aucun template n\'a Ã©tÃ© trouvÃ©.');
         return;
       }
 
@@ -2715,11 +2906,11 @@ const Editor: React.FC<EditorProps> = React.memo(({ onBack, initialTemplate }) =
         setHistory([selectedTemplate]);
         setHistoryIndex(0);
         setSelectedElement(null);
-        notifications.success('Template ouvert', `Le template "${selectedTemplate.name}" a été ouvert.`);
+        notifications.success('Template ouvert', `Le template "${selectedTemplate.name}" a Ã©tÃ© ouvert.`);
       }
     } catch (error) {
       console.error('Error loading recent templates:', error);
-      notifications.error('Erreur', 'Impossible de charger les templates récents.');
+      notifications.error('Erreur', 'Impossible de charger les templates rÃ©cents.');
     }
   };
 
@@ -2729,10 +2920,10 @@ Nom: ${template.name}
 ID: ${template.id}
 Type: ${template.type}
 Dimensions: ${template.width}x${template.height}
-Éléments: ${template.elements.length}
+Ã‰lÃ©ments: ${template.elements.length}
 Couleur de fond: ${template.backgroundColor}
-Créé le: ${template.createdAt ? new Date(template.createdAt).toLocaleDateString() : 'Non sauvegardé'}
-Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : 'Non sauvegardé'}
+CrÃ©Ã© le: ${template.createdAt ? new Date(template.createdAt).toLocaleDateString() : 'Non sauvegardÃ©'}
+ModifiÃ© le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : 'Non sauvegardÃ©'}
     `.trim();
 
     // Show info in a simple alert for now
@@ -2740,7 +2931,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
   };
 
   const handleQuit = () => {
-    if (confirm('Êtes-vous sûr de vouloir quitter l\'éditeur ? Les modifications non sauvegardées seront perdues.')) {
+    if (confirm('ÃŠtes-vous sÃ»r de vouloir quitter l\'Ã©diteur ? Les modifications non sauvegardÃ©es seront perdues.')) {
       onBack();
     }
   };
@@ -2756,18 +2947,18 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       setTemplate(newTemplate);
       saveToHistory(newTemplate);
       setSelectedElement(null);
-      notifications.success('Élément coupé', 'L\'élément a été coupé et placé dans le presse-papiers.');
+      notifications.success('Ã‰lÃ©ment coupÃ©', 'L\'Ã©lÃ©ment a Ã©tÃ© coupÃ© et placÃ© dans le presse-papiers.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à couper.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  couper.');
     }
   };
 
   const handleCopy = () => {
     if (selectedElement) {
       setClipboard(selectedElement);
-      notifications.success('Élément copié', 'L\'élément a été copié dans le presse-papiers.');
+      notifications.success('Ã‰lÃ©ment copiÃ©', 'L\'Ã©lÃ©ment a Ã©tÃ© copiÃ© dans le presse-papiers.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à copier.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  copier.');
     }
   };
 
@@ -2790,9 +2981,9 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       setTemplate(newTemplate);
       saveToHistory(newTemplate);
       setSelectedElement(newElement);
-      notifications.success('Élément collé', 'L\'élément a été collé depuis le presse-papiers.');
+      notifications.success('Ã‰lÃ©ment collÃ©', 'L\'Ã©lÃ©ment a Ã©tÃ© collÃ© depuis le presse-papiers.');
     } else {
-      notifications.warning('Presse-papiers vide', 'Aucun élément à coller.');
+      notifications.warning('Presse-papiers vide', 'Aucun Ã©lÃ©ment Ã  coller.');
     }
   };
 
@@ -2805,18 +2996,18 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       setTemplate(newTemplate);
       saveToHistory(newTemplate);
       setSelectedElement(null);
-      notifications.success('Élément effacé', 'L\'élément sélectionné a été supprimé.');
+      notifications.success('Ã‰lÃ©ment effacÃ©', 'L\'Ã©lÃ©ment sÃ©lectionnÃ© a Ã©tÃ© supprimÃ©.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à effacer.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  effacer.');
     }
   };
 
   const handleFreeTransform = () => {
     if (selectedElement) {
       // For now, just show a message. In a full implementation, this would open a transform dialog
-      notifications.warning('Transformation libre', 'Cette fonctionnalité sera bientôt disponible. Utilisez les propriétés du panneau de droite pour modifier l\'élément.');
+      notifications.warning('Transformation libre', 'Cette fonctionnalitÃ© sera bientÃ´t disponible. Utilisez les propriÃ©tÃ©s du panneau de droite pour modifier l\'Ã©lÃ©ment.');
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à transformer.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  transformer.');
     }
   };
 
@@ -2826,10 +3017,10 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       const color = prompt('Entrez une couleur (hex, rgb, ou nom):', selectedElement.backgroundColor || '#cccccc');
       if (color) {
         handleElementUpdate(selectedElement.id, { backgroundColor: color });
-        notifications.success('Remplissage appliqué', `La couleur ${color} a été appliquée.`);
+        notifications.success('Remplissage appliquÃ©', `La couleur ${color} a Ã©tÃ© appliquÃ©e.`);
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément à remplir.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment Ã  remplir.');
     }
   };
 
@@ -2838,33 +3029,33 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     const gridSize = prompt('Taille de la grille (en pixels):', '20');
     if (gridSize) {
       // In a real implementation, this would update global preferences
-      notifications.success('Préférences mises à jour', `Taille de la grille définie à ${gridSize}px.`);
+      notifications.success('PrÃ©fÃ©rences mises Ã  jour', `Taille de la grille dÃ©finie Ã  ${gridSize}px.`);
     }
   };
 
   const handleSystemSettings = () => {
     // Show system settings dialog
-    notifications.warning('Paramètres système', 'Cette fonctionnalité nécessite des permissions administrateur.');
+    notifications.warning('ParamÃ¨tres systÃ¨me', 'Cette fonctionnalitÃ© nÃ©cessite des permissions administrateur.');
   };
 
   const handleSetBackgroundColor = () => {
-    const color = prompt('Couleur d\'arrière-plan du canevas (hex, rgb, ou nom):', template.backgroundColor || '#ffffff');
+    const color = prompt('Couleur d\'arriÃ¨re-plan du canevas (hex, rgb, ou nom):', template.backgroundColor || '#ffffff');
     if (color) {
       setTemplate(prev => ({
         ...prev,
         backgroundColor: color
       }));
       saveToHistory({ ...template, backgroundColor: color });
-      notifications.success('Couleur d\'arrière-plan modifiée', `La couleur ${color} a été appliquée au canevas.`);
+      notifications.success('Couleur d\'arriÃ¨re-plan modifiÃ©e', `La couleur ${color} a Ã©tÃ© appliquÃ©e au canevas.`);
     }
   };
 
   const handleSetForegroundColor = () => {
     // This would typically set a global foreground color for new elements
-    const color = prompt('Couleur de premier plan par défaut (hex, rgb, ou nom):', '#000000');
+    const color = prompt('Couleur de premier plan par dÃ©faut (hex, rgb, ou nom):', '#000000');
     if (color) {
       // In a real implementation, this would update global state
-      notifications.success('Couleur de premier plan définie', `La couleur ${color} sera utilisée pour les nouveaux éléments.`);
+      notifications.success('Couleur de premier plan dÃ©finie', `La couleur ${color} sera utilisÃ©e pour les nouveaux Ã©lÃ©ments.`);
     }
   };
 
@@ -2872,7 +3063,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     if (selectedElement) {
       // Set stroke (border) color and width
       const strokeColor = prompt('Couleur du contour (hex, rgb, ou nom):', selectedElement.strokeColor || '#000000');
-      const strokeWidth = prompt('Épaisseur du contour (pixels):', (selectedElement.strokeWidth || 1).toString());
+      const strokeWidth = prompt('Ã‰paisseur du contour (pixels):', (selectedElement.strokeWidth || 1).toString());
 
       if (strokeColor !== null && strokeWidth !== null) {
         const width = parseInt(strokeWidth);
@@ -2881,26 +3072,26 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
             strokeColor: strokeColor,
             strokeWidth: width
           });
-          notifications.success('Contour appliqué', `Contour ${strokeColor} de ${width}px appliqué.`);
+          notifications.success('Contour appliquÃ©', `Contour ${strokeColor} de ${width}px appliquÃ©.`);
         } else {
-          notifications.error('Épaisseur invalide', 'Veuillez entrer un nombre positif.');
+          notifications.error('Ã‰paisseur invalide', 'Veuillez entrer un nombre positif.');
         }
       }
     } else {
-      notifications.warning('Aucun élément sélectionné', 'Veuillez sélectionner un élément pour appliquer un contour.');
+      notifications.warning('Aucun Ã©lÃ©ment sÃ©lectionnÃ©', 'Veuillez sÃ©lectionner un Ã©lÃ©ment pour appliquer un contour.');
     }
   };
 
   const handleFindReplace = () => {
     if (template.elements.length === 0) {
-      notifications.warning('Aucun élément textuel', 'Il n\'y a aucun élément textuel dans le document.');
+      notifications.warning('Aucun Ã©lÃ©ment textuel', 'Il n\'y a aucun Ã©lÃ©ment textuel dans le document.');
       return;
     }
 
     // Get all text elements
     const textElements = template.elements.filter(el => el.type === 'text');
     if (textElements.length === 0) {
-      notifications.warning('Aucun texte trouvé', 'Aucun élément contenant du texte n\'a été trouvé.');
+      notifications.warning('Aucun texte trouvÃ©', 'Aucun Ã©lÃ©ment contenant du texte n\'a Ã©tÃ© trouvÃ©.');
       return;
     }
 
@@ -2916,7 +3107,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
         <div class="p-4 space-y-4">
           <div>
             <label class="block text-sm font-medium mb-1">Rechercher</label>
-            <input type="text" class="w-full border rounded px-3 py-2 find-input" placeholder="Texte à rechercher">
+            <input type="text" class="w-full border rounded px-3 py-2 find-input" placeholder="Texte Ã  rechercher">
           </div>
           <div>
             <label class="block text-sm font-medium mb-1">Remplacer par</label>
@@ -2927,7 +3118,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
             <label for="case-sensitive" class="text-sm">Respecter la casse</label>
           </div>
           <div class="text-sm text-gray-600">
-            ${textElements.length} élément(s) textuel(s) trouvé(s)
+            ${textElements.length} Ã©lÃ©ment(s) textuel(s) trouvÃ©(s)
           </div>
           <div class="flex justify-end space-x-2 pt-4">
             <button class="px-4 py-2 bg-gray-200 rounded cancel-btn">Annuler</button>
@@ -2972,12 +3163,12 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       if (totalMatches > 0) {
         replaceAllBtn.disabled = false;
         replaceAllBtn.classList.remove('disabled');
-        findBtn.textContent = `${totalMatches} occurrence(s) trouvée(s)`;
+        findBtn.textContent = `${totalMatches} occurrence(s) trouvÃ©e(s)`;
         findBtn.disabled = true;
       } else {
         replaceAllBtn.disabled = true;
         replaceAllBtn.classList.add('disabled');
-        findBtn.textContent = 'Aucune occurrence trouvée';
+        findBtn.textContent = 'Aucune occurrence trouvÃ©e';
       }
     };
 
@@ -3000,7 +3191,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       });
 
       if (totalReplacements > 0) {
-        notifications.success('Remplacement effectué', `${totalReplacements} occurrence(s) remplacée(s).`);
+        notifications.success('Remplacement effectuÃ©', `${totalReplacements} occurrence(s) remplacÃ©e(s).`);
       }
 
       document.body.removeChild(modal);
@@ -3026,7 +3217,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
       modal.innerHTML = `
         <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-          <h3 class="text-lg font-semibold mb-4">Ouvrir un template récent</h3>
+          <h3 class="text-lg font-semibold mb-4">Ouvrir un template rÃ©cent</h3>
           <div class="max-h-60 overflow-y-auto">
             ${templates.map(t => `
               <button class="w-full text-left p-2 hover:bg-gray-100 rounded template-btn" data-id="${t.id}">
@@ -3106,19 +3297,19 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
             setHistoryIndex(0);
             setSelectedElement(null);
 
-            notifications.success('Template ouvert', `Le template "${loadedTemplate.name}" a été chargé avec succès.`);
+            notifications.success('Template ouvert', `Le template "${loadedTemplate.name}" a Ã©tÃ© chargÃ© avec succÃ¨s.`);
           } else {
             notifications.error('Format JSON invalide', 'Le fichier ne contient pas un template valide.');
           }
         } else if (fileExtension === 'html') {
           // Parse HTML template
-          notifications.warning('Format HTML détecté', 'L\'importation de templates HTML n\'est pas encore supportée. Veuillez utiliser un fichier JSON.');
+          notifications.warning('Format HTML dÃ©tectÃ©', 'L\'importation de templates HTML n\'est pas encore supportÃ©e. Veuillez utiliser un fichier JSON.');
         } else {
-          notifications.error('Format non supporté', 'Formats acceptés: .json, .html');
+          notifications.error('Format non supportÃ©', 'Formats acceptÃ©s: .json, .html');
         }
       } catch (error) {
         console.error('Error opening file:', error);
-        notifications.error('Erreur d\'ouverture', 'Impossible de lire le fichier. Vérifiez qu\'il s\'agit d\'un fichier valide.');
+        notifications.error('Erreur d\'ouverture', 'Impossible de lire le fichier. VÃ©rifiez qu\'il s\'agit d\'un fichier valide.');
       }
     };
 
@@ -3144,13 +3335,13 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
 
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        notifications.error('Type de fichier invalide', 'Veuillez sélectionner un fichier image.');
+        notifications.error('Type de fichier invalide', 'Veuillez sÃ©lectionner un fichier image.');
         return;
       }
 
       // Validate file size (10MB limit like backend)
       if (file.size > 10 * 1024 * 1024) {
-        notifications.error('Fichier trop volumineux', 'La taille maximale autorisée est de 10MB.');
+        notifications.error('Fichier trop volumineux', 'La taille maximale autorisÃ©e est de 10MB.');
         return;
       }
 
@@ -3192,10 +3383,10 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
         saveToHistory(newTemplate);
         setSelectedElement(newElement);
 
-        notifications.success('Image importée', 'L\'image a été ajoutée au canevas avec succès.');
+        notifications.success('Image importÃ©e', 'L\'image a Ã©tÃ© ajoutÃ©e au canevas avec succÃ¨s.');
       } catch (error) {
         console.error('Error importing image:', error);
-        notifications.error('Erreur d\'import', 'Impossible d\'importer l\'image. Veuillez réessayer.');
+        notifications.error('Erreur d\'import', 'Impossible d\'importer l\'image. Veuillez rÃ©essayer.');
       }
     };
 
@@ -3289,7 +3480,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
             </div>
             <div class="flex-1">
               <div class="font-medium">${file.name}</div>
-              <div class="text-sm text-gray-500">${file.size} • ${new Date(file.date).toLocaleDateString()}</div>
+              <div class="text-sm text-gray-500">${file.size} â€¢ ${new Date(file.date).toLocaleDateString()}</div>
             </div>
           </div>
         `).join('');
@@ -3351,7 +3542,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
           setHistory([selectedFile.data]);
           setHistoryIndex(0);
           setSelectedElement(null);
-          notifications.success('Template ouvert', `Le template "${selectedFile.name}" a été ouvert.`);
+          notifications.success('Template ouvert', `Le template "${selectedFile.name}" a Ã©tÃ© ouvert.`);
         } else if (selectedFile.type === 'image') {
           notifications.warning('Ouverture d\'image', 'Utilisez "Importer" pour ajouter des images au canevas.');
         }
@@ -3405,10 +3596,10 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
           setTemplate(updatedTemplate);
           saveToHistory(updatedTemplate);
 
-          notifications.success('Importation réussie', `Fichier PSD importé avec ${newElements.length} éléments.`);
+          notifications.success('Importation rÃ©ussie', `Fichier PSD importÃ© avec ${newElements.length} Ã©lÃ©ments.`);
         } catch (error) {
           console.error('PSD import error:', error);
-          notifications.error('Erreur d\'importation', 'Impossible d\'importer le fichier PSD. Vérifiez que le fichier n\'est pas corrompu.');
+          notifications.error('Erreur d\'importation', 'Impossible d\'importer le fichier PSD. VÃ©rifiez que le fichier n\'est pas corrompu.');
         }
         return;
       }
@@ -3436,7 +3627,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
           if (aiResult.warnings.length > 0) {
             notifications.warning('Importation AI partielle', aiResult.warnings.join(' '));
           } else {
-            notifications.success('Importation réussie', `Fichier AI importé avec ${aiResult.elements.length} éléments.`);
+            notifications.success('Importation rÃ©ussie', `Fichier AI importÃ© avec ${aiResult.elements.length} Ã©lÃ©ments.`);
           }
         } catch (error) {
           console.error('AI import error:', error);
@@ -3445,14 +3636,14 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
         return;
       } else if (fileExtension === 'pdf') {
         notifications.warning(
-          'Format PDF détecté',
-          'L\'importation de fichiers PDF n\'est pas encore supportée. ' +
+          'Format PDF dÃ©tectÃ©',
+          'L\'importation de fichiers PDF n\'est pas encore supportÃ©e. ' +
           'Veuillez convertir le fichier en image (PNG/JPG) ou utiliser un fichier AI.'
         );
       } else {
         notifications.error(
-          'Format non supporté',
-          'Ce type de fichier n\'est pas supporté. Formats acceptés: images (PNG, JPG, GIF, BMP, WebP), PSD, AI, SVG.'
+          'Format non supportÃ©',
+          'Ce type de fichier n\'est pas supportÃ©. Formats acceptÃ©s: images (PNG, JPG, GIF, BMP, WebP), PSD, AI, SVG.'
         );
       }
     };
@@ -3470,7 +3661,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
 
     if (hasUnsavedChanges) {
       const confirmed = confirm(
-        'Le document contient des modifications non sauvegardées. Voulez-vous vraiment fermer sans sauvegarder ?'
+        'Le document contient des modifications non sauvegardÃ©es. Voulez-vous vraiment fermer sans sauvegarder ?'
       );
       if (!confirmed) return;
     }
@@ -3493,7 +3684,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     setHistoryIndex(0);
     setSelectedElement(null);
 
-    notifications.success('Document fermé', 'Le document a été fermé et un nouveau document vierge a été créé.');
+    notifications.success('Document fermÃ©', 'Le document a Ã©tÃ© fermÃ© et un nouveau document vierge a Ã©tÃ© crÃ©Ã©.');
   };
 
   const handleSaveAs = () => {
@@ -3508,20 +3699,20 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     modal.innerHTML = `
       <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
         <div class="flex justify-between items-center p-4 border-b">
-          <h3 class="text-lg font-semibold">Paramètres d'impression</h3>
+          <h3 class="text-lg font-semibold">ParamÃ¨tres d'impression</h3>
           <button class="text-gray-500 hover:text-gray-700 text-xl cancel-btn">&times;</button>
         </div>
         <div class="p-4 space-y-4">
           <div>
-            <label class="block text-sm font-medium mb-1">Échelle (%)</label>
+            <label class="block text-sm font-medium mb-1">Ã‰chelle (%)</label>
             <input type="number" class="w-full border rounded px-3 py-2 scale-input" value="100" min="10" max="200">
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Résolution (DPI)</label>
+            <label class="block text-sm font-medium mb-1">RÃ©solution (DPI)</label>
             <select class="w-full border rounded px-3 py-2 resolution-select">
-              <option value="72">72 DPI (Écran)</option>
+              <option value="72">72 DPI (Ã‰cran)</option>
               <option value="150" selected>150 DPI (Standard)</option>
-              <option value="300">300 DPI (Haute qualité)</option>
+              <option value="300">300 DPI (Haute qualitÃ©)</option>
               <option value="600">600 DPI (Professionnel)</option>
             </select>
           </div>
@@ -3536,7 +3727,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
           </div>
           <div class="flex items-center">
             <input type="checkbox" class="mr-2 fit-to-page" checked>
-            <label class="text-sm">Ajuster à la page</label>
+            <label class="text-sm">Ajuster Ã  la page</label>
           </div>
           <div class="flex justify-end space-x-2 pt-4">
             <button class="px-4 py-2 bg-gray-200 rounded cancel-btn">Annuler</button>
@@ -3559,7 +3750,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       // Create print-friendly version
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
-        notifications.error('Erreur d\'impression', 'Impossible d\'ouvrir la fenêtre d\'impression.');
+        notifications.error('Erreur d\'impression', 'Impossible d\'ouvrir la fenÃªtre d\'impression.');
         return;
       }
 
@@ -3593,8 +3784,8 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
         <body>
           <div class="print-canvas">
             ${template.elements.map(element => {
-              if (element.type === 'text') {
-                return `<div class="element text-element" style="
+        if (element.type === 'text') {
+          return `<div class="element text-element" style="
                   left: ${element.x}px;
                   top: ${element.y}px;
                   font-size: ${element.fontSize || 16}px;
@@ -3603,8 +3794,8 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
                   font-weight: ${element.fontWeight || 'normal'};
                   text-align: ${element.textAlign || 'left'};
                 ">${element.content || ''}</div>`;
-              } else if (element.type === 'shape') {
-                return `<div class="element" style="
+        } else if (element.type === 'shape') {
+          return `<div class="element" style="
                   left: ${element.x}px;
                   top: ${element.y}px;
                   width: ${element.width}px;
@@ -3612,17 +3803,17 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
                   background-color: ${element.backgroundColor || '#cccccc'};
                   border-radius: ${element.borderRadius || 0}px;
                 "></div>`;
-              } else if (element.type === 'image' && element.imageUrl) {
-                return `<img class="element" src="${element.imageUrl}" style="
+        } else if (element.type === 'image' && element.imageUrl) {
+          return `<img class="element" src="${element.imageUrl}" style="
                   left: ${element.x}px;
                   top: ${element.y}px;
                   width: ${element.width}px;
                   height: ${element.height}px;
                   border-radius: ${element.borderRadius || 0}px;
                 " />`;
-              }
-              return '';
-            }).join('')}
+        }
+        return '';
+      }).join('')}
           </div>
         </body>
         </html>
@@ -3634,7 +3825,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       // Wait for content to load then print
       printWindow.onload = () => {
         printWindow.print();
-        notifications.success('Impression lancée', 'La boîte de dialogue d\'impression s\'est ouverte.');
+        notifications.success('Impression lancÃ©e', 'La boÃ®te de dialogue d\'impression s\'est ouverte.');
       };
     });
 
@@ -3679,7 +3870,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     try {
       const projectData = getProjectData();
       await ybFileManager.saveYB(projectData);
-      notifications.success('Fichier .yb sauvegardé', 'Le projet a été enregistré au format .yb.');
+      notifications.success('Fichier .yb sauvegardÃ©', 'Le projet a Ã©tÃ© enregistrÃ© au format .yb.');
     } catch (error) {
       console.error('Error saving .yb file:', error);
       notifications.error('Erreur de sauvegarde .yb', (error as Error).message);
@@ -3701,7 +3892,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       // Reconstruct template from loadedProjectData
       const newTemplate: CertificateTemplate = {
         id: `template-${Date.now()}`, // Generate new ID for loaded project
-        name: file.name.replace('.yb', '') || 'Projet chargé',
+        name: file.name.replace('.yb', '') || 'Projet chargÃ©',
         elements: loadedProjectData.elements.map(el => ({
           ...el,
           // Restore positions from loadedProjectData.positions
@@ -3727,7 +3918,7 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
       setHistory([newTemplate]);
       setHistoryIndex(0);
       setSelectedElement(null);
-      notifications.success('Fichier .yb chargé', `Le projet "${newTemplate.name}" a été chargé avec succès.`);
+      notifications.success('Fichier .yb chargÃ©', `Le projet "${newTemplate.name}" a Ã©tÃ© chargÃ© avec succÃ¨s.`);
     } catch (error) {
       console.error('Error loading .yb file:', error);
       notifications.error('Erreur de chargement .yb', (error as Error).message);
@@ -3736,12 +3927,19 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
 
   // const handleToolSelect = (tool: string) => { // Unused
   //   setCurrentTool(tool);
-  //   // Désélectionner l'élément quand on change d'outil
+  //   // DÃ©sÃ©lectionner l'Ã©lÃ©ment quand on change d'outil
   //   if (tool !== 'move') {
   //     setSelectedElement(null);
   //     setVisibleControlPoints(new Set());
   //   }
   // };
+
+  // Helper for unimplemented features
+  const notImplemented = () => console.log("Feature not implemented yet");
+
+  // File Menu Handlers (Stubs)
+
+
 
   const menuActions = {
     newFile: handleNewFile,
@@ -3758,8 +3956,8 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     importImage: handleImportImage,
     importFile: handleImportFile,
     browseInBridge: handleBrowseInBridge,
-    saveYB: handleSaveYB, // Add saveYB action
-    loadYB: handleLoadYB, // Add loadYB action
+    saveYB: handleSaveYB,
+    loadYB: handleLoadYB,
     undo: handleUndo,
     redo: handleRedo,
     cut: handleCut,
@@ -3845,13 +4043,171 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
     transformRotate180: handleTransformRotate180,
     transformRotate90CW: handleTransformRotate90CW,
     transformRotate90CCW: handleTransformRotate90CCW,
- };
+  };
+
+  // Keyboard shortcuts (Moved to bottom to avoid TDZ)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Track modifier keys
+      if (e.key === 'Shift') {
+        setShiftPressed(true);
+      } else if (e.key === 'Alt') {
+        setAltPressed(true);
+      }
+
+      // Tool shortcuts
+      if (e.key === 'v' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('move');
+      } else if (e.key === 'm' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('marquee-rect');
+      } else if (e.key === 'l' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('lasso');
+      } else if (e.key === 'w' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('quick-select');
+      } else if (e.key === 'c' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('crop');
+      } else if (e.key === 'i' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('eyedropper');
+      } else if (e.key === 'j' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('healing');
+      } else if (e.key === 'b' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('brush');
+      } else if (e.key === 'e' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('eraser');
+      } else if (e.key === 'g' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('gradient');
+      } else if (e.key === 'p' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('pen');
+      } else if (e.key === 'u' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('shape');
+      } else if (e.key === 't' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('text');
+      } else if (e.key === 'h' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('hand');
+      } else if (e.key === 'z' && !e.ctrlKey && !e.altKey) {
+        setCurrentTool('zoom');
+      } else if (e.key === 'x' && !e.ctrlKey && !e.altKey) {
+        // Swap foreground/background colors (simplified)
+        console.log('Swap colors');
+      }
+
+      // Edit shortcuts
+      else if (e.key === 'z' && e.ctrlKey && !e.shiftKey) {
+        handleUndo();
+      } else if (e.key === 'z' && e.ctrlKey && e.shiftKey) {
+        handleRedo();
+      } else if (e.key === 'a' && e.ctrlKey) {
+        handleSelectAll();
+      } else if (e.key === 'd' && e.ctrlKey) {
+        handleDeselect();
+      } else if (e.key === 'x' && e.ctrlKey) {
+        handleCut();
+      } else if (e.key === 'c' && e.ctrlKey) {
+        handleCopy();
+      } else if (e.key === 'v' && e.ctrlKey) {
+        handlePaste();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (isEditPathMode && selectedElement && selectedPathPoints.size > 0) {
+          // Remove selected path points
+          handleRemoveSelectedPathPoints(selectedElement);
+        } else if (selectedElement && !selectedElement.locked) {
+          if (currentTool === 'eraser') {
+            setTemplate(prev => ({
+              ...prev,
+              elements: prev.elements.filter(el => el.id !== selectedElement.id)
+            }));
+            setSelectedElement(null);
+          } else {
+            handleDeleteLayer();
+          }
+        }
+      } else if (e.key === 'r' && e.ctrlKey) {
+        handleShowRulers();
+      } else if (e.key === '\'' && e.ctrlKey) {
+        handleShowGrid();
+      } else if (e.key === 'f' && !e.ctrlKey && !e.altKey) {
+        handleFullScreen();
+      } else if (e.key === 'ArrowUp' && selectedElement) {
+        e.preventDefault();
+        const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
+        handleElementUpdate(selectedElement.id, { y: selectedElement.y - delta });
+      } else if (e.key === 'ArrowDown' && selectedElement) {
+        e.preventDefault();
+        const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
+        handleElementUpdate(selectedElement.id, { y: selectedElement.y + delta });
+      } else if (e.key === 'ArrowLeft' && selectedElement) {
+        e.preventDefault();
+        const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
+        handleElementUpdate(selectedElement.id, { x: selectedElement.x - delta });
+      } else if (e.key === 'ArrowRight' && selectedElement) {
+        e.preventDefault();
+        const delta = e.shiftKey ? 10 : (e.ctrlKey ? 1 : 5);
+        handleElementUpdate(selectedElement.id, { x: selectedElement.x + delta });
+      } else if (e.key === '[' && selectedElement) {
+        // Rotate counterclockwise
+        e.preventDefault();
+        const currentRotation = selectedElement.rotation || 0;
+        handleElementUpdate(selectedElement.id, { rotation: currentRotation - 15 });
+      } else if (e.key === 'g' && e.ctrlKey && !e.shiftKey) {
+        e.preventDefault();
+        handleGroup();
+      } else if ((e.key === 'g' || e.key === 'G') && e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        handleUngroup();
+      } else if (e.key === ']' && selectedElement) {
+        // Rotate clockwise
+        e.preventDefault();
+        const currentRotation = selectedElement.rotation || 0;
+        handleElementUpdate(selectedElement.id, { rotation: currentRotation + 15 });
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setShiftPressed(false);
+      } else if (e.key === 'Alt') {
+        setAltPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [
+    currentTool,
+    selectedElement,
+    selectedElementIds,
+    template,
+    historyIndex,
+    history,
+    handleGroup,
+    handleUngroup,
+    handleUndo,
+    handleRedo,
+    handleSelectAll,
+    handleDeselect,
+    handleCut,
+    handleCopy,
+    handlePaste,
+    handleDeleteLayer,
+    handleElementUpdate,
+    handleRemoveSelectedPathPoints,
+    isEditPathMode,
+    selectedPathPoints
+  ]);
+
+
+
 
   return (
     <div
       className="fixed inset-0 bg-gray-900 overflow-hidden select-none"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onMouseMove={handleCanvasMouseMove}
+      onMouseUp={handleCanvasMouseUp}
+      onMouseDown={handleCanvasMouseDown}
       style={{ fontFamily: 'Segoe UI, sans-serif', fontSize: '11px' }}
     >
       {/* Hidden file input for loading .yb files */}
@@ -3864,381 +4220,394 @@ Modifié le: ${template.updatedAt ? new Date(template.updatedAt).toLocaleDateStr
         aria-label="Ouvrir un fichier YB"
       />
 
-      {/* Photoshop-style Menu Bar */}
-      <div className="absolute top-0 left-0 right-0 h-7 bg-[#2B2B2B] border-b border-gray-600 z-50 flex items-center px-2">
-        <PhotoshopMenuBar actions={menuActions} />
-        {/* Modifier key indicators */}
-        <div className="ml-auto flex items-center space-x-1 text-xs text-gray-400">
-          {shiftPressed && (
-            <span className="bg-blue-600 text-white px-1 py-0.5 rounded text-xs font-mono">⇧</span>
-          )}
-          {altPressed && (
-            <span className="bg-green-600 text-white px-1 py-0.5 rounded text-xs font-mono">⎇</span>
-          )}
-        </div>
-      </div>
+      <WorkspaceLayout
+        topBar={
+          <div className="relative w-full z-50">
+            <PhotoshopMenuBar actions={menuActions} />
+            {/* Modifier key indicators */}
+            <div className="absolute top-1 right-2 flex items-center space-x-1 text-xs text-gray-400 pointer-events-none">
+              {shiftPressed && (
+                <span className="bg-blue-600 text-white px-1 py-0.5 rounded text-xs font-mono">â‡§</span>
+              )}
+              {altPressed && (
+                <span className="bg-green-600 text-white px-1 py-0.5 rounded text-xs font-mono">âŽ‡</span>
+              )}
+            </div>
+          </div>
+        }
+        toolBar={
+          <PhotoshopToolbar
+            onAddElement={handleAddElement}
+            onToolSelect={setCurrentTool}
+          />
+        }
+        canvasArea={
+          <div
+            className="relative w-full h-full bg-[#1e1e1e] flex items-center justify-center overflow-hidden"
+            onMouseDown={(e) => {
+              if (currentTool !== 'canvas-resize' && (e.button === 1 || (e.button === 0 && currentTool === 'hand'))) {
+                e.preventDefault();
+                setIsPanning(true);
+                setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+              }
+            }}
+          >
+            {/* Rulers */}
+            {showRulers && (
+              <>
+                {/* Horizontal ruler */}
+                <div
+                  className="absolute top-0 left-0 bg-gray-200 border-r border-gray-400 z-10"
+                  style={{
+                    width: Math.min(template.width || 800, window.innerWidth - 400),
+                    height: '20px'
+                  }}
+                >
+                  <div className="flex items-center h-full text-xs text-gray-600">
+                    {Array.from({ length: Math.ceil((template.width || 800) / 50) }, (_, i) => (
+                      <div key={i} className="relative" style={{ width: '50px' }}>
+                        <div className="absolute -bottom-1 w-px h-2 bg-gray-400"></div>
+                        <div className="absolute -bottom-1 left-1/2 w-px h-1 bg-gray-400"></div>
+                        <div className="absolute -bottom-1 right-0 w-px h-2 bg-gray-400"></div>
+                        <span className="absolute -bottom-6 left-1 text-xs">{i * 50}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-      {/* Left Tools Panel */}
-      <div className="absolute left-0 top-7 w-32 bg-[#2D2D2D] border-r border-gray-600 overflow-y-auto overflow-x-auto" style={{ height: 'calc(100vh - 28px)' }}>
-        <PhotoshopToolbar
-          onAddElement={handleAddElement}
-          onToolSelect={setCurrentTool}
-        />
-      </div>
+                {/* Vertical ruler */}
+                <div
+                  className="absolute top-0 left-0 bg-gray-200 border-b border-gray-400 z-10"
+                  style={{
+                    width: '20px',
+                    height: Math.min((template.height || 600) * 0.7, window.innerHeight * 0.7)
+                  }}
+                >
+                  <div className="flex flex-col justify-start w-full text-xs text-gray-600">
+                    {Array.from({ length: Math.ceil((template.height || 600) / 50) }, (_, i) => (
+                      <div key={i} className="relative" style={{ height: '50px' }}>
+                        <div className="absolute -right-1 w-2 h-px bg-gray-400"></div>
+                        <div className="absolute -right-1 top-1/2 w-1 h-px bg-gray-400"></div>
+                        <div className="absolute -right-1 bottom-0 w-2 h-px bg-gray-400"></div>
+                        <span
+                          className="absolute -right-8 top-1 text-xs transform -rotate-90 origin-center"
+                          style={{ transformOrigin: 'center' }}
+                        >
+                          {i * 50}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
 
-
-      {/* Canvas Area */}
-      <div
-        className="absolute flex items-center justify-center canvas-area overflow-hidden"
-        style={{
-          left: showRulers ? '148px' : '128px', // Extra space for rulers
-          top: showRulers ? '48px' : '28px', // Extra space for rulers
-          right: '320px',
-          bottom: 0
-        }}
-        onMouseDown={(e) => {
-          // Only allow panning when NOT in canvas-resize mode
-          if (currentTool !== 'canvas-resize' && (e.button === 1 || (e.button === 0 && currentTool === 'hand'))) {
-            e.preventDefault();
-            setIsPanning(true);
-            setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-          }
-        }}
-      >
-        {/* Rulers */}
-        {showRulers && (
-          <>
-            {/* Horizontal ruler */}
             <div
-              className="absolute top-0 left-0 bg-gray-200 border-r border-gray-400 z-10"
+              ref={canvasRef}
+              className={`relative transition-colors duration-200 ${currentTool === 'canvas-resize' ? 'border-2' :
+                isPanning ? 'cursor-grabbing' : currentTool === 'hand' ? 'cursor-grab' : 'cursor-crosshair'
+                }`}
               style={{
                 width: Math.min(template.width || 800, window.innerWidth - 400),
-                height: '20px'
+                height: Math.min((template.height || 600) * 0.7, window.innerHeight * 0.7),
+                backgroundColor: template.backgroundColor || '#ffffff',
+                backgroundImage: showGrid ? 'linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)' : 'none',
+                backgroundSize: '20px 20px',
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+                transformOrigin: 'top left',
+                boxShadow: selectedElement ? '0 0 0 1px rgba(59, 130, 246, 0.5)' : 'none'
               }}
+              onMouseDown={handleCanvasMouseDown}
+              onDragOver={handleCanvasDragOver}
+              onDrop={handleCanvasDrop}
             >
-              <div className="flex items-center h-full text-xs text-gray-600">
-                {Array.from({ length: Math.ceil((template.width || 800) / 50) }, (_, i) => (
-                  <div key={i} className="relative" style={{ width: '50px' }}>
-                    <div className="absolute -bottom-1 w-px h-2 bg-gray-400"></div>
-                    <div className="absolute -bottom-1 left-1/2 w-px h-1 bg-gray-400"></div>
-                    <div className="absolute -bottom-1 right-0 w-px h-2 bg-gray-400"></div>
-                    <span className="absolute -bottom-6 left-1 text-xs">{i * 50}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Vertical ruler */}
-            <div
-              className="absolute top-0 left-0 bg-gray-200 border-b border-gray-400 z-10"
-              style={{
-                width: '20px',
-                height: Math.min((template.height || 600) * 0.7, window.innerHeight * 0.7)
-              }}
-            >
-              <div className="flex flex-col justify-start w-full text-xs text-gray-600">
-                {Array.from({ length: Math.ceil((template.height || 600) / 50) }, (_, i) => (
-                  <div key={i} className="relative" style={{ height: '50px' }}>
-                    <div className="absolute -right-1 w-2 h-px bg-gray-400"></div>
-                    <div className="absolute -right-1 top-1/2 w-1 h-px bg-gray-400"></div>
-                    <div className="absolute -right-1 bottom-0 w-2 h-px bg-gray-400"></div>
-                    <span
-                      className="absolute -right-8 top-1 text-xs transform -rotate-90 origin-center"
-                      style={{ transformOrigin: 'center' }}
-                    >
-                      {i * 50}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        <div
-          ref={canvasRef}
-          className={`relative transition-colors duration-200 ${
-            currentTool === 'canvas-resize' ? 'border-2' :
-            isPanning ? 'cursor-grabbing' : currentTool === 'hand' ? 'cursor-grab' : 'cursor-crosshair'
-          }`}
-          style={{
-            width: Math.min(template.width || 800, window.innerWidth - 400),
-            height: Math.min((template.height || 600) * 0.7, window.innerHeight * 0.7),
-            backgroundColor: template.backgroundColor || '#ffffff',
-            backgroundImage: showGrid ? 'linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)' : 'none',
-            backgroundSize: '20px 20px',
-            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
-            transformOrigin: 'top left',
-            boxShadow: selectedElement ? '0 0 0 1px rgba(59, 130, 246, 0.5)' : 'none'
-          }}
-          onMouseDown={handleCanvasMouseDown}
-          onDragOver={handleCanvasDragOver}
-          onDrop={handleCanvasDrop}
-        >
-          {/* Canvas resize handles - only show when canvas-resize tool is active */}
-          {currentTool === 'canvas-resize' && (
-            <CanvasResizeHandles
-              onResizeStart={handleStartCanvasResize}
-              onResize={handleCanvasResize}
-              onResizeEnd={() => setIsResizingCanvas(false)}
-              canvasWidth={template.width || 800}
-              canvasHeight={template.height || 600}
-              zoom={zoom}
-            />
-          )}
-
-          {/* Alignment guides */}
-          <AlignmentGuides
-            elements={template.elements}
-            selectedElement={selectedElement}
-            canvasWidth={template.width || 800}
-            canvasHeight={template.height || 600}
-            zoom={zoom}
-            panOffset={panOffset}
-          />
-          {template.elements
-            .filter(element => element.visible !== false)
-            .map((element) => (
-            <div
-              id={`element-${element.id}`}
-              key={element.id}
-              className={`absolute transition-all duration-150 ${
-                element.locked
-                  ? 'cursor-not-allowed opacity-60'
-                  : selectedElement?.id === element.id
-                    ? 'cursor-pointer border-2 border-transparent'
-                    : 'cursor-pointer border-2 border-transparent hover:border-blue-300 hover:shadow-md hover:shadow-blue-300/10'
-              }`}
-              style={{
-                left: element.x,
-                top: element.y,
-                width: element.width,
-                height: element.height,
-                transform: buildTransformString(element),
-                opacity: element.opacity || 1,
-                zIndex: element.zIndex,
-              }}
-              onClick={() => !element.locked && handleElementSelect(element)}
-              onDoubleClick={(e) => {
-                if (element.locked) return;
-                e.stopPropagation();
-                handleElementDoubleClick(element);
-              }}
-              onMouseEnter={() => {
-                if (element.locked) return;
-                // Add subtle hover effect
-                const el = document.getElementById(`element-${element.id}`);
-                if (el && selectedElement?.id !== element.id) {
-                  el.style.transform = element.rotation
-                    ? `rotate(${element.rotation}deg) scale(1.02)`
-                    : 'scale(1.02)';
-                }
-              }}
-              onMouseLeave={() => {
-                if (element.locked) return;
-                // Reset hover effect and cursor
-                const el = document.getElementById(`element-${element.id}`);
-                if (el) {
-                  el.style.transform = element.rotation ? `rotate(${element.rotation}deg)` : 'none';
-                  el.style.cursor = 'pointer';
-                  el.dataset.resizeEdge = '';
-                }
-              }}
-            >
-              {/* Transformation handles for selected element */}
-              {selectedElement?.id === element.id && !element.locked && (
-                <TransformationHandles
-                  element={element}
-                  onStartTransform={handleStartTransform}
-                  onStartDeform={handleStartDeform}
-                  onStartSkew={handleStartSkew}
+              {currentTool === 'canvas-resize' && (
+                <CanvasResizeHandles
+                  onResizeStart={handleStartCanvasResize}
+                  onResize={handleCanvasResize}
+                  onResizeEnd={() => setIsResizingCanvas(false)}
+                  canvasWidth={template.width || 800}
+                  canvasHeight={template.height || 600}
                   zoom={zoom}
-                  showControlPoints={visibleControlPoints.has(element.id) || isPerspectiveMode}
-                  isEditPathMode={isEditPathMode}
-                  isPerspectiveMode={isPerspectiveMode}
-                  isCurvatureMode={isCurvatureMode}
                 />
               )}
-              {/* Indicateur de suppression pour l'élément sélectionné */}
-              {selectedElement?.id === element.id && !element.locked && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteLayer();
-                  }}
-                  className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs z-10"
-                  title="Supprimer l'élément (Suppr)"
-                >
-                  ×
-                </button>
-              )}
-              {element.type === 'text' && (
-                editingElement?.id === element.id ? (
+
+              <AlignmentGuides
+                elements={template.elements}
+                selectedElement={selectedElement}
+                canvasWidth={template.width || 800}
+                canvasHeight={template.height || 600}
+                zoom={zoom}
+                panOffset={panOffset}
+              />
+
+              {template.elements
+                .filter(element => element.visible !== false)
+                .map((element) => (
                   <div
-                    ref={contentEditableRef}
-                    contentEditable
-                    className="inline-text-editor w-full h-full border-none outline-none bg-transparent selection:bg-blue-200 overflow-hidden"
-                    onInput={(e) => setEditingText(e.currentTarget.textContent || '')}
-                    onBlur={handleTextEditSave}
-                    onKeyDown={handleTextEditKeyDown}
+                    id={`element-${element.id}`}
+                    key={element.id}
+                    className={`absolute transition-all duration-150 ${element.locked
+                      ? 'cursor-not-allowed opacity-60'
+                      : selectedElement?.id === element.id
+                        ? 'cursor-pointer border-2 border-transparent'
+                        : 'cursor-pointer border-2 border-transparent hover:border-blue-300 hover:shadow-md hover:shadow-blue-300/10'
+                      }`}
                     style={{
-                      fontSize: element.fontSize,
-                      fontFamily: element.fontFamily,
-                      fontWeight: element.fontWeight,
-                      color: element.color,
-                      textAlign: element.textAlign,
-                      backgroundColor: element.backgroundColor || 'transparent',
-                      borderRadius: element.borderRadius || 0,
-                      lineHeight: '1.2',
-                      padding: '2px 4px',
-                      whiteSpace: element.textType === 'point' ? 'nowrap' : 'pre-wrap',
-                      overflow: 'visible',
-                      zIndex: 1000,
-                      caretColor: element.color || '#000000',
-                      border: '1px solid #007acc',
-                      boxShadow: '0 0 0 1px rgba(0, 122, 204, 0.3)',
-                      minHeight: '20px',
-                      wordWrap: 'break-word',
+                      left: element.x,
+                      top: element.y,
+                      width: element.width,
+                      height: element.height,
+                      transform: buildTransformString(element),
+                      opacity: element.opacity || 1,
+                      zIndex: element.zIndex,
+                      filter: `blur(${element.filter?.blur || 0}px) brightness(${element.filter?.brightness || 100}%) contrast(${element.filter?.contrast || 100}%) drop-shadow(${element.filter?.shadow?.x || 0}px ${element.filter?.shadow?.y || 0}px ${element.filter?.shadow?.blur || 0}px ${element.filter?.shadow?.color || '#000000'})`,
                     }}
-                    suppressContentEditableWarning={true}
-                    autoFocus
-                    spellCheck={false}
-                    dangerouslySetInnerHTML={{ __html: editingText }}
-                  />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center select-none cursor-text"
-                    style={{
-                      fontSize: element.fontSize,
-                      fontFamily: element.fontFamily,
-                      fontWeight: element.fontWeight,
-                      color: element.color,
-                      textAlign: element.textAlign,
-                      backgroundColor: element.backgroundColor || 'transparent',
-                      borderRadius: element.borderRadius || 0,
-                      whiteSpace: element.textType === 'point' ? 'nowrap' : 'pre-wrap',
-                      overflow: 'visible',
-                      textOverflow: 'clip',
-                      wordWrap: 'break-word',
-                      lineHeight: '1.2',
-                      // Apply warp effect if element has warp properties
-                      transform: element.warpIntensity ? `scaleY(${1 + Math.sin(Date.now() * 0.001) * element.warpIntensity * 0.1})` : undefined,
-                      transformOrigin: 'center bottom',
+                    onClick={() => !element.locked && handleElementSelect(element)}
+                    onDoubleClick={(e) => {
+                      if (element.locked) return;
+                      e.stopPropagation();
+                      handleElementDoubleClick(element);
                     }}
-                    onDoubleClick={() => handleElementDoubleClick(element)}
+                    onMouseEnter={() => {
+                      if (element.locked) return;
+                      const el = document.getElementById(`element-${element.id}`);
+                      if (el && selectedElement?.id !== element.id) {
+                        el.style.transform = element.rotation
+                          ? `rotate(${element.rotation}deg) scale(1.02)`
+                          : 'scale(1.02)';
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (element.locked) return;
+                      const el = document.getElementById(`element-${element.id}`);
+                      if (el) {
+                        el.style.transform = element.rotation ? `rotate(${element.rotation}deg)` : 'none';
+                        el.style.cursor = 'pointer';
+                        el.dataset.resizeEdge = '';
+                      }
+                    }}
                   >
-                    {element.variableName ? (
-                      // Display variable with special styling
-                      <span
-                        className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          backgroundColor: 'rgba(0, 122, 204, 0.1)',
-                          border: '1px solid rgba(0, 122, 204, 0.3)',
-                          color: '#007acc',
+                    {selectedElement?.id === element.id && !element.locked && selectedElementIds.size <= 1 && (
+                      <TransformationHandles
+                        element={element}
+                        onStartTransform={handleStartTransform}
+                        onStartDeform={handleStartDeform}
+                        onStartSkew={handleStartSkew}
+                        zoom={zoom}
+                        showControlPoints={visibleControlPoints.has(element.id) || isPerspectiveMode}
+                        isEditPathMode={isEditPathMode}
+                        isPerspectiveMode={isPerspectiveMode}
+                        isCurvatureMode={isCurvatureMode}
+                      />
+                    )}
+                    {selectedElement?.id === element.id && !element.locked && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteLayer();
                         }}
-                        title={`Variable: ${element.variableName}`}
+                        className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs z-10"
+                        title="Supprimer l'Ã©lÃ©ment (Suppr)"
                       >
-                        ⚙️ {element.content}
-                      </span>
-                    ) : (
-                      element.content
+                        Ã—
+                      </button>
+                    )}
+                    {element.type === 'text' && (
+                      editingElement?.id === element.id ? (
+                        <div
+                          ref={contentEditableRef}
+                          contentEditable
+                          className="inline-text-editor w-full h-full border-none outline-none bg-transparent selection:bg-blue-200 overflow-hidden"
+                          onInput={(e) => setEditingText(e.currentTarget.textContent || '')}
+                          onBlur={handleTextEditSave}
+                          onKeyDown={handleTextEditKeyDown}
+                          style={{
+                            fontSize: element.fontSize,
+                            fontFamily: element.fontFamily,
+                            fontWeight: element.fontWeight,
+                            color: element.color,
+                            textAlign: element.textAlign,
+                            backgroundColor: element.backgroundColor || 'transparent',
+                            borderRadius: element.borderRadius || 0,
+                            lineHeight: '1.2',
+                            padding: '2px 4px',
+                            whiteSpace: element.textType === 'point' ? 'nowrap' : 'pre-wrap',
+                            overflow: 'visible',
+                            zIndex: 1000,
+                            caretColor: element.color || '#000000',
+                            border: '1px solid #007acc',
+                            boxShadow: '0 0 0 1px rgba(0, 122, 204, 0.3)',
+                            minHeight: '20px',
+                            wordWrap: 'break-word',
+                          }}
+                          suppressContentEditableWarning={true}
+                          autoFocus
+                          spellCheck={false}
+                          dangerouslySetInnerHTML={{ __html: editingText }}
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full flex items-center justify-center select-none cursor-text"
+                          style={{
+                            fontSize: element.fontSize,
+                            fontFamily: element.fontFamily,
+                            fontWeight: element.fontWeight,
+                            color: element.color,
+                            textAlign: element.textAlign,
+                            backgroundColor: element.backgroundColor || 'transparent',
+                            borderRadius: element.borderRadius || 0,
+                            whiteSpace: element.textType === 'point' ? 'nowrap' : 'pre-wrap',
+                            overflow: 'visible',
+                            textOverflow: 'clip',
+                            wordWrap: 'break-word',
+                            lineHeight: '1.2',
+                            transform: element.warpIntensity ? `scaleY(${1 + Math.sin(Date.now() * 0.001) * element.warpIntensity * 0.1})` : undefined,
+                            transformOrigin: 'center bottom',
+                          }}
+                          onDoubleClick={() => handleElementDoubleClick(element)}
+                        >
+                          {element.variableName ? (
+                            <span
+                              className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium"
+                              style={{
+                                backgroundColor: 'rgba(0, 122, 204, 0.1)',
+                                border: '1px solid rgba(0, 122, 204, 0.3)',
+                                color: '#007acc',
+                              }}
+                              title={`Variable: ${element.variableName}`}
+                            >
+                              âš™ï¸ {element.content}
+                            </span>
+                          ) : (
+                            element.content
+                          )}
+                        </div>
+                      )
+                    )}
+                    {element.type === 'shape' && (
+                      <ShapeRenderer element={element} isPerspectiveMode={isPerspectiveMode} isCurvatureMode={isCurvatureMode} />
+                    )}
+                    {element.type === 'image' && element.imageUrl && (
+                      <img
+                        src={element.imageUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        style={{
+                          borderRadius: element.borderRadius || 0,
+                        }}
+                      />
                     )}
                   </div>
-                )
-              )}
-              {element.type === 'shape' && (
-                <ShapeRenderer element={element} isPerspectiveMode={isPerspectiveMode} isCurvatureMode={isCurvatureMode} />
-              )}
-              {element.type === 'image' && element.imageUrl && (
-                <img
-                  src={element.imageUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
+                ))}
+
+              {selectionBounds && (
+                <div
+                  className="absolute border-2 border-blue-500 pointer-events-none"
                   style={{
-                    borderRadius: element.borderRadius || 0,
+                    left: selectionBounds.x,
+                    top: selectionBounds.y,
+                    width: selectionBounds.width,
+                    height: selectionBounds.height,
+                    zIndex: 9999
                   }}
                 />
               )}
+
+              {/* Vector Brush Preview */}
+              {isDrawing && currentPathPoints.length > 1 && (
+                <svg
+                  className="absolute top-0 left-0 w-full h-full pointer-events-none z-[10000]"
+                  style={{ overflow: 'visible' }}
+                >
+                  <path
+                    d={`M ${currentPathPoints.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                    fill="none"
+                    stroke="#000000"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="drop-shadow-sm"
+                  />
+                </svg>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Right Panels */}
-      <div
-        className="absolute right-0 top-7 w-80 bg-gray-800 border-l border-gray-600"
-        style={{ height: 'calc(100vh - 28px)' }}
-      >
-        {/* Edit Path Mode Indicator */}
-        {isEditPathMode && selectedElement && (
-          <div className="px-3 py-2 bg-blue-600 text-white text-xs font-medium border-b border-blue-500">
-            ✏️ Mode Édition des Points - {selectedElement.shapeType || 'Forme'}
-            <button
-              onClick={() => {
-                setIsEditPathMode(false);
-                setSelectedPathPoints(new Set());
-                setVisibleControlPoints(new Set());
-              }}
-              className="float-right ml-2 px-2 py-0.5 bg-blue-700 hover:bg-blue-800 rounded text-xs"
-              title="Quitter le mode édition"
-            >
-              ✕
-            </button>
           </div>
-        )}
+        }
+        panels={
+          <>
+            {isEditPathMode && selectedElement && (
+              <div className="px-3 py-2 bg-blue-600 text-white text-xs font-medium border-b border-blue-500">
+                âœï¸ Mode Ã‰dition des Points - {selectedElement.shapeType || 'Forme'}
+                <button
+                  onClick={() => {
+                    setIsEditPathMode(false);
+                    setSelectedPathPoints(new Set());
+                    setVisibleControlPoints(new Set());
+                  }}
+                  className="float-right ml-2 px-2 py-0.5 bg-blue-700 hover:bg-blue-800 rounded text-xs"
+                >
+                  âœ•
+                </button>
+              </div>
+            )}
+            {isPerspectiveMode && selectedElement && (
+              <div className="px-3 py-2 bg-orange-600 text-white text-xs font-medium border-b border-orange-500">
+                ðŸ“ Mode Perspective - {selectedElement.shapeType || 'Forme'}
+                <button
+                  onClick={() => {
+                    setIsPerspectiveMode(false);
+                    setVisibleControlPoints(new Set());
+                  }}
+                  className="float-right ml-2 px-2 py-0.5 bg-orange-700 hover:bg-orange-800 rounded text-xs"
+                >
+                  âœ•
+                </button>
+              </div>
+            )}
 
-        {/* Perspective Mode Indicator */}
-        {isPerspectiveMode && selectedElement && (
-          <div className="px-3 py-2 bg-orange-600 text-white text-xs font-medium border-b border-orange-500">
-            📐 Mode Perspective - {selectedElement.shapeType || 'Forme'}
-            <button
-              onClick={() => {
-                setIsPerspectiveMode(false);
-                setVisibleControlPoints(new Set());
+            <PhotoshopPanels
+              selectedElement={selectedElement}
+              onElementUpdate={handleElementUpdate}
+              onElementDelete={(elementId: string) => {
+                setTemplate(prev => ({
+                  ...prev,
+                  elements: prev.elements.filter(el => el.id !== elementId),
+                }));
+                setSelectedElement(null);
               }}
-              className="float-right ml-2 px-2 py-0.5 bg-orange-700 hover:bg-orange-800 rounded text-xs"
-              title="Quitter le mode perspective"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        <PhotoshopPanels
-          selectedElement={selectedElement}
-          onElementUpdate={handleElementUpdate}
-          onElementDelete={(elementId: string) => {
-            setTemplate(prev => ({
-              ...prev,
-              elements: prev.elements.filter(el => el.id !== elementId),
-            }));
-            setSelectedElement(null);
-          }}
-          onElementSelect={handleElementSelect}
-          templateElements={template.elements}
-          onVariableSelect={(variable) => {
-            if (editingElement) {
-              insertVariable(variable.placeholder);
-            } else {
-              // Create new text element with variable
-              handleAddElement('text', 100, 100);
-              setTimeout(() => {
-                const newElement = template.elements[template.elements.length - 1];
-                if (newElement) {
-                  setEditingElement(newElement);
-                  setEditingText(variable.placeholder);
-                  setSelectedElement(newElement);
+              onElementSelect={handleElementSelect}
+              templateElements={template.elements}
+              templateElements={template.elements}
+              onVariableSelect={(variable) => {
+                if (editingElement) {
+                  insertVariable(variable.placeholder);
+                } else {
+                  handleAddElement('text', 100, 100);
+                  setTimeout(() => {
+                    const newElement = template.elements[template.elements.length - 1];
+                    if (newElement) {
+                      setEditingElement(newElement);
+                      setEditingText(variable.placeholder);
+                      setSelectedElement(newElement);
+                    }
+                  }, 0);
                 }
-              }, 0);
-            }
-          }}
-          onVariableDrag={(variable, e) => {
-            console.log('Variable dragged:', variable);
-          }}
-        />
-      </div>
+              }}
+              onVariableDrag={(variable, e) => {
+                console.log('Variable dragged:', variable);
+              }}
+            />
+          </>
+        }
+        statusBar={
+          <div className="bg-[#1e1e1e] text-[#888888] text-[10px] px-2 py-0.5 border-t border-[#333333] flex justify-between select-none">
+            <span>{Math.round(zoom * 100)}%</span>
+            <span>{Math.round(template.width)}px x {Math.round(template.height)}px (300 ppi)</span>
+          </div>
+        }
+      />
 
-      {/* Help Modal */}
       {showHelp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">

@@ -20,7 +20,8 @@ import {
   Building,
   MapPin,
   Clock as ClockIcon,
-  Share
+  Share,
+  Palette
 } from 'lucide-react';
 import { Participant, CertificateTemplate } from '../types';
 import { participantsApi, emailApi, generateCertificateNumber, templatesApi, certificateApi, getAuthToken } from '../utils/api';
@@ -141,7 +142,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
 
     // Validate that all required training data is provided
     if (!trainingData.trainingTitle || !trainingData.trainingDate || !trainingData.trainingLocation ||
-        !trainingData.trainingDuration || !trainingData.instructor || !trainingData.organization) {
+      !trainingData.trainingDuration || !trainingData.instructor || !trainingData.organization) {
       notifications.warning('Informations manquantes', 'Veuillez remplir tous les champs obligatoires de formation avant de procéder à l\'approbation.');
       return;
     }
@@ -282,9 +283,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
     const icon = type === 'success'
       ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>'
       : type === 'warning'
-      ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>'
-      : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
-    
+        ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>'
+        : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>';
+
     notification.className = `fixed top-4 right-4 ${bgColor} text-white px-6 py-4 rounded-lg shadow-2xl z-50 max-w-md`;
     notification.innerHTML = `
       <div class="flex items-start">
@@ -303,16 +304,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
         </button>
       </div>
     `;
-    
+
     document.body.appendChild(notification);
-    
+
     // Animation d'entrée
     notification.style.transform = 'translateX(100%)';
     notification.style.transition = 'transform 0.3s ease-out';
     setTimeout(() => {
       notification.style.transform = 'translateX(0)';
     }, 10);
-    
+
     // Auto-suppression après 8 secondes
     setTimeout(() => {
       if (notification.parentElement) {
@@ -336,9 +337,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
         status: 'rejected' as const,
         rejectionReason: rejectionReason || 'Raison non spécifiée'
       };
-      
+
       const updatedParticipant = await participantsApi.update(selectedParticipant.id, updates);
-      setParticipants(prev => prev.map(p => 
+      setParticipants(prev => prev.map(p =>
         p.id === selectedParticipant.id ? updatedParticipant : p
       ));
 
@@ -484,7 +485,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
           <h2 className="text-xl font-bold text-white">Administration</h2>
           <p className="text-blue-100 text-sm">Gestion des attestations</p>
         </div>
-        
+
         <nav className="mt-6">
           <div className="px-6 space-y-2">
             {onGoToParticipant && (
@@ -538,8 +539,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               <Settings className="w-5 h-5 mr-3" />
               Paramètres
             </button>
+            <button
+              onClick={() => onNavigate('canva')}
+              className="w-full flex items-center px-4 py-3 text-left hover:bg-gray-100 rounded-lg transition-colors text-gray-700"
+            >
+              <Palette className="w-5 h-5 mr-3" />
+              Genere avec canva
+            </button>
           </div>
-          
+
           <div className="mt-8 px-6">
             <button
               onClick={onLogout}
@@ -585,7 +593,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center">
               <div className="p-2 bg-green-100 rounded-lg">
@@ -599,7 +607,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center">
               <div className="p-2 bg-red-100 rounded-lg">
@@ -613,7 +621,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg">
@@ -634,7 +642,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               <Filter className="w-5 h-5 text-gray-400 mr-2" />
               <span className="text-sm font-medium text-gray-700">Filtres:</span>
             </div>
-            
+
             <select
               value={filter.status}
               onChange={(e) => {
@@ -648,7 +656,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
               <option value="approved">Approuvées</option>
               <option value="rejected">Rejetées</option>
             </select>
-            
+
             <button
               onClick={exportCSV}
               className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
@@ -704,7 +712,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                       {participant.certificateNumber || '-'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {participant.templateId ? 
+                      {participant.templateId ?
                         templates.find(t => t.id === participant.templateId)?.name || 'Template supprimé'
                         : '-'
                       }
@@ -737,7 +745,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                           </>
                         )}
                         {participant.status === 'approved' && (
-                          <button 
+                          <button
                             onClick={() => handleResendCertificate(participant)}
                             className="flex items-center px-2 py-1 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 transition-colors text-xs"
                           >
@@ -780,11 +788,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                     <button
                       key={page}
                       onClick={() => handlePageChange(page)}
-                      className={`px-3 py-1 text-sm border rounded-md ${
-                        currentPage === page
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'border-gray-300 hover:bg-gray-50'
-                      }`}
+                      className={`px-3 py-1 text-sm border rounded-md ${currentPage === page
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'border-gray-300 hover:bg-gray-50'
+                        }`}
                     >
                       {page}
                     </button>
@@ -827,7 +834,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             {/* Participant Info */}
             <div className="bg-white border-2 border-blue-200 rounded-lg p-6 mb-6">
               <div className="flex items-center mb-3">
@@ -1018,7 +1025,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="mb-4">
               <p className="text-sm text-gray-600 mb-2">
                 Participant: <strong>{selectedParticipant.participantName}</strong>
@@ -1053,7 +1060,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                 <div>
                   <p className="text-sm text-blue-800 font-medium">Approbation rapide</p>
                   <p className="text-xs text-blue-600">
-                    Le nom "{selectedParticipant.participantName}" sera automatiquement ajouté au template sélectionné 
+                    Le nom "{selectedParticipant.participantName}" sera automatiquement ajouté au template sélectionné
                     et le certificat sera envoyé par email.
                   </p>
                 </div>
@@ -1092,7 +1099,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate, o
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="mb-4">
               <p className="text-sm text-gray-600 mb-2">
                 Participant: <strong>{selectedParticipant.participantName}</strong>

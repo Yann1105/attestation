@@ -100,14 +100,91 @@ const psdUpload = multer({
   }
 });
 
+// Generate template with AI (Groq)
+router.post('/generate-ai', async (req, res) => {
+  try {
+    const { type, customPrompt, save, name } = req.body;
+
+    // Validate type
+    if (!type || !['attestation', 'certificat', 'affiche'].includes(type)) {
+      return res.status(400).json({
+        error: 'Invalid type. Must be: attestation, certificat, or affiche'
+      });
+    }
+
+    // Import and use the template AI generator
+    const { templateAIGenerator } = await import('../utils/templateAIGenerator');
+
+    console.log(`📝 Generating ${type} template...`);
+    const result = await templateAIGenerator.generateTemplate({
+      type: type as 'attestation' | 'certificat' | 'affiche',
+      customPrompt
+    });
+
+    // If save is requested, save to database
+    if (save) {
+      const templateName = name || `${type.charAt(0).toUpperCase() + type.slice(1)} - ${new Date().toISOString().split('T')[0]}`;
+
+      const dbResult = await query(`
+        INSERT INTO templates (
+          name, 
+          description, 
+          type, 
+          content, 
+          placeholders, 
+          ai_generated, 
+          ai_prompt,
+          template_type,
+          width,
+          height,
+          background_color,
+          created_at, 
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING *
+      `, [
+        templateName,
+        result.description,
+        'custom',
+        result.html,
+        JSON.stringify(result.variables),
+        true,
+        customPrompt || `Generate ${type}`,
+        type,
+        794, // A4 width
+        1123, // A4 height
+        '#FFFFFF'
+      ]);
+
+      const row = dbResult.rows[0];
+      return res.status(201).json({
+        ...result,
+        saved: true,
+        templateId: row.id.toString()
+      });
+    }
+
+    // Return generated template without saving
+    res.json(result);
+  } catch (error) {
+    console.error('Error generating template with AI:', error);
+    res.status(500).json({
+      error: 'Failed to generate template',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Get all templates
+
 router.get('/', async (req, res) => {
   try {
     const result = await query('SELECT * FROM templates ORDER BY created_at DESC');
     const templates = result.rows.map(row => {
       const hasCanvasData = row.canvas_data &&
         (typeof row.canvas_data === 'object' ||
-         (typeof row.canvas_data === 'string' && row.canvas_data.trim().length > 0));
+          (typeof row.canvas_data === 'string' && row.canvas_data.trim().length > 0));
 
       return {
         id: row.id.toString(),
@@ -123,7 +200,10 @@ router.get('/', async (req, res) => {
         width: row.width,
         height: row.height,
         editorType: row.editor_type,
-        preferCanvas: hasCanvasData, // New field for frontend sorting
+        aiGenerated: row.ai_generated,
+        aiPrompt: row.ai_prompt,
+        outputFormat: row.output_format,
+        preferCanvas: hasCanvasData,
         createdAt: row.created_at,
         updatedAt: row.updated_at
       };
@@ -162,22 +242,30 @@ router.post('/', authMiddleware, validate(createTemplateSchema), async (req, res
     }
 
     const result = await query(`
-      INSERT INTO templates (name, description, elements, canvas_data, editor_type, width, height, background_color, content, placeholders, file_path, type, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO templates (
+        name, description, elements, canvas_data, editor_type, 
+        width, height, background_color, content, placeholders, 
+        file_path, type, ai_generated, ai_prompt, output_format,
+        created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `, [
       name,
       description,
       JSON.stringify(elements),
       canvasData,
-      req.body.editorType || (canvasData ? 'canvas' : 'simple'), // Default based on canvasData presence
+      req.body.editorType || (canvasData ? 'canvas' : 'simple'),
       req.body.width || 1200,
       req.body.height || 850,
       req.body.backgroundColor || '#FFFFFF',
       htmlContent,
       extractedPlaceholders ? JSON.stringify(extractedPlaceholders) : null,
       req.body.filePath || null,
-      req.body.type || 'custom'
+      req.body.type || 'custom',
+      req.body.aiGenerated || false,
+      req.body.aiPrompt || null,
+      req.body.outputFormat || 'html'
     ]);
 
     const row = result.rows[0];
@@ -195,6 +283,9 @@ router.post('/', authMiddleware, validate(createTemplateSchema), async (req, res
       width: row.width,
       height: row.height,
       editorType: row.editor_type,
+      aiGenerated: row.ai_generated,
+      aiPrompt: row.ai_prompt,
+      outputFormat: row.output_format,
       preferCanvas: !!row.canvas_data,
       createdAt: row.created_at,
       updatedAt: row.updated_at
@@ -240,6 +331,14 @@ router.put('/:id', authMiddleware, validate(updateTemplateSchema), async (req, r
     if (updates.editorType !== undefined) {
       fields.push(`editor_type = $${paramCount++}`);
       values.push(updates.editorType);
+    }
+    if (updates.aiPrompt !== undefined) {
+      fields.push(`ai_prompt = $${paramCount++}`);
+      values.push(updates.aiPrompt);
+    }
+    if (updates.outputFormat !== undefined) {
+      fields.push(`output_format = $${paramCount++}`);
+      values.push(updates.outputFormat);
     }
 
     // Auto-regenerate HTML content and placeholders if elements or canvasData changed
@@ -305,6 +404,9 @@ router.put('/:id', authMiddleware, validate(updateTemplateSchema), async (req, r
       width: row.width,
       height: row.height,
       editorType: row.editor_type,
+      aiGenerated: row.ai_generated,
+      aiPrompt: row.ai_prompt,
+      outputFormat: row.output_format,
       preferCanvas: !!row.canvas_data,
       createdAt: row.created_at,
       updatedAt: row.updated_at

@@ -1,44 +1,57 @@
 import React, { useState } from 'react';
-import { Layers, Palette, Settings, History, Type, Sliders, SwatchBook, AlignLeft, Sparkles, Radio, Route, Library } from 'lucide-react';
+import { Layers, Palette, Settings, History, Type, Sliders, SwatchBook, AlignLeft, AlignCenterHorizontal, AlignRight, AlignStartVertical, AlignCenterVertical, AlignEndVertical, Sparkles, Radio, Route, Library, ChevronDown, ChevronRight, Eye, EyeOff, Lock, Unlock, MoreHorizontal, Trash2, Folder, FilePlus } from 'lucide-react';
+
 import { TemplateElement } from '../../types';
 import LayersPanel from './LayersPanel';
 import DynamicVariablesPanel from './DynamicVariablesPanel';
 
 interface PhotoshopPanelsProps {
-   selectedElement: TemplateElement | null;
-   onElementUpdate: (elementId: string, updates: Partial<TemplateElement>) => void;
-   onElementDelete: (elementId: string) => void;
-   onElementSelect: (element: TemplateElement | null) => void;
-   templateElements: TemplateElement[];
-   onVariableSelect?: (variable: any) => void;
-   onVariableDrag?: (variable: any, e: React.DragEvent) => void;
+  selectedElement: TemplateElement | null;
+  onElementUpdate: (elementId: string, updates: Partial<TemplateElement>) => void;
+  onElementDelete: (elementId: string) => void;
+  onElementSelect: (element: TemplateElement | null) => void;
+  templateElements: TemplateElement[];
+  onVariableSelect?: (variable: any) => void;
+  onVariableDrag?: (variable: any, e: React.DragEvent) => void;
+  onAlign?: (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => void;
 }
 
-const PhotoshopPanels: React.FC<PhotoshopPanelsProps> = ({
-   selectedElement,
-   onElementUpdate,
-   onElementDelete,
-   onElementSelect,
-   templateElements,
-   onVariableSelect,
-   onVariableDrag,
-}) => {
-  const [activePanel, setActivePanel] = useState('properties');
+const PanelHeader = ({ title, icon: Icon, isOpen, onToggle, actions }: any) => (
+  <div className="flex items-center justify-between px-2 py-1 bg-[#3a3a3a] border-b border-[#222] cursor-pointer" onClick={onToggle}>
+    <div className="flex items-center space-x-2 text-[#cccccc]">
+      {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+      {Icon && <Icon className="w-3 h-3" />}
+      <span className="text-xs font-medium select-none">{title}</span>
+    </div>
+    <div className="flex items-center space-x-1" onClick={e => e.stopPropagation()}>
+      {actions}
+      <button className="p-0.5 hover:bg-[#505050] rounded text-[#aaaaaa]">
+        <MoreHorizontal className="w-3 h-3" />
+      </button>
+    </div>
+  </div>
+);
 
-  const panels = [
-    { id: 'layers', icon: Layers, label: 'Calques', shortcut: 'F7' },
-    { id: 'properties', icon: Settings, label: 'Propriétés' },
-    { id: 'history', icon: History, label: 'Historique' },
-    { id: 'swatches', icon: SwatchBook, label: 'Nuancier' },
-    { id: 'color', icon: Palette, label: 'Couleur', shortcut: 'F6' },
-    { id: 'adjustments', icon: Sliders, label: 'Réglages' },
-    { id: 'character', icon: Type, label: 'Caractère', shortcut: 'Ctrl + T' },
-    { id: 'paragraph', icon: AlignLeft, label: 'Paragraphe' },
-    { id: 'styles', icon: Sparkles, label: 'Styles' },
-    { id: 'channels', icon: Radio, label: 'Canaux' },
-    { id: 'paths', icon: Route, label: 'Tracés' },
-    { id: 'libraries', icon: Library, label: 'Bibliothèques' },
-  ];
+const PhotoshopPanels: React.FC<PhotoshopPanelsProps> = ({
+  selectedElement,
+  onElementUpdate,
+  onElementDelete,
+  onElementSelect,
+  templateElements,
+  onVariableSelect,
+  onVariableDrag,
+  onAlign,
+}) => {
+  const [panelsOpen, setPanelsOpen] = useState({
+    properties: true,
+    layers: true,
+    history: false,
+    library: false
+  });
+
+  const togglePanel = (panel: keyof typeof panelsOpen) => {
+    setPanelsOpen(prev => ({ ...prev, [panel]: !prev[panel] }));
+  };
 
   const handleUpdate = (field: keyof TemplateElement, value: any) => {
     if (selectedElement) {
@@ -47,709 +60,333 @@ const PhotoshopPanels: React.FC<PhotoshopPanelsProps> = ({
   };
 
   return (
-    <div className="w-80 bg-gray-800 text-white flex flex-col h-full" style={{ fontSize: '10px' }}>
-      {/* Panel Tabs */}
-      <div className="flex border-b border-gray-700">
-        {panels.map((panel) => (
-          <button
-            key={panel.id}
-            onClick={() => setActivePanel(panel.id)}
-            className={`flex-1 p-1.5 text-xs hover:bg-gray-700 transition-colors flex flex-col items-center ${
-              activePanel === panel.id ? 'bg-gray-700' : ''
-            }`}
-            title={`${panel.label}${panel.shortcut ? ` (${panel.shortcut})` : ''}`}
-          >
-            <panel.icon className="w-3 h-3 mb-0.5" />
-            <span className="text-xs">{panel.label}</span>
-          </button>
-        ))}
-      </div>
+    <div className="flex flex-col h-full bg-[#3a3a3a] text-[#eeeeee]" style={{ fontSize: '11px' }}>
 
-      {/* Panel Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {activePanel === 'layers' && (
-          <LayersPanel
-            templateElements={templateElements}
-            selectedElement={selectedElement}
-            onElementSelect={onElementSelect}
-            onElementUpdate={onElementUpdate}
-            onElementDelete={onElementDelete}
-          />
-        )}
+      {/* Top Dock: Properties */}
+      <div className="flex-1 flex flex-col min-h-[200px] border-b border-[#111111] overflow-hidden">
+        <PanelHeader
+          title="Propriétés"
+          icon={Settings}
+          isOpen={panelsOpen.properties}
+          onToggle={() => togglePanel('properties')}
+        />
 
-        {activePanel === 'color' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Couleur</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs mb-1">Couleur de premier plan</label>
-                <input
-                  type="color"
-                  defaultValue="#000000"
-                  className="w-full h-8 rounded border border-gray-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs mb-1">Couleur d'arrière-plan</label>
-                <input
-                  type="color"
-                  defaultValue="#ffffff"
-                  className="w-full h-8 rounded border border-gray-600"
-                />
-              </div>
-              <button className="w-full py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">
-                Inverser (X)
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'properties' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Propriétés</h3>
+        {panelsOpen.properties && (
+          <div className="flex-1 overflow-y-auto p-3 bg-[#333333]">
             {selectedElement ? (
               <div className="space-y-4">
                 {/* Basic Transform Properties */}
                 <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Transformation</h4>
+                  <h4 className="text-[10px] font-bold text-[#aaaaaa] uppercase tracking-wider mb-1">Alignement</h4>
+                  <div className="flex space-x-1 justify-between">
+                    <button onClick={() => onAlign && onAlign('left')} title="Aligner à gauche" className="p-1 hover:bg-[#505050] rounded"><AlignLeft className="w-3 h-3" /></button>
+                    <button onClick={() => onAlign && onAlign('center')} title="Centrer horizontalement" className="p-1 hover:bg-[#505050] rounded"><AlignCenterHorizontal className="w-3 h-3" /></button>
+                    <button onClick={() => onAlign && onAlign('right')} title="Aligner à droite" className="p-1 hover:bg-[#505050] rounded"><AlignRight className="w-3 h-3" /></button>
+                    <div className="w-px bg-[#444] mx-1"></div>
+                    <button onClick={() => onAlign && onAlign('top')} title="Aligner en haut" className="p-1 hover:bg-[#505050] rounded"><AlignStartVertical className="w-3 h-3" /></button>
+                    <button onClick={() => onAlign && onAlign('middle')} title="Centrer verticalement" className="p-1 hover:bg-[#505050] rounded"><AlignCenterVertical className="w-3 h-3" /></button>
+                    <button onClick={() => onAlign && onAlign('bottom')} title="Aligner en bas" className="p-1 hover:bg-[#505050] rounded"><AlignEndVertical className="w-3 h-3" /></button>
+                  </div>
+
+                  <h4 className="text-[10px] font-bold text-[#aaaaaa] uppercase tracking-wider mb-1 mt-3">Transformation</h4>
                   <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs mb-1">X</label>
+                    <div className="flex items-center space-x-2">
+                      <label className="text-[10px] w-3 text-[#999]">X</label>
                       <input
                         type="number"
                         value={Math.round(selectedElement.x)}
                         onChange={(e) => handleUpdate('x', parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs mb-1">Y</label>
+                    <div className="flex items-center space-x-2">
+                      <label className="text-[10px] w-3 text-[#999]">Y</label>
                       <input
                         type="number"
                         value={Math.round(selectedElement.y)}
                         onChange={(e) => handleUpdate('y', parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs mb-1">L</label>
+                    <div className="flex items-center space-x-2">
+                      <label className="text-[10px] w-3 text-[#999]">L</label>
                       <input
                         type="number"
                         value={Math.round(selectedElement.width)}
                         onChange={(e) => handleUpdate('width', parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs mb-1">H</label>
+                    <div className="flex items-center space-x-2">
+                      <label className="text-[10px] w-3 text-[#999]">H</label>
                       <input
                         type="number"
                         value={Math.round(selectedElement.height)}
                         onChange={(e) => handleUpdate('height', parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
                       />
                     </div>
                   </div>
-                  {selectedElement.rotation && (
-                    <div>
-                      <label className="block text-xs mb-1">Rotation (°)</label>
-                      <input
-                        type="number"
-                        value={Math.round(selectedElement.rotation)}
-                        onChange={(e) => handleUpdate('rotation', parseInt(e.target.value) || 0)}
-                        className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                      />
-                    </div>
-                  )}
                 </div>
 
                 {/* Element-specific properties */}
                 {selectedElement.type === 'text' && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Texte</h4>
-                    <div>
-                      <label className="block text-xs mb-1">Variable</label>
-                      <div className="text-xs text-blue-400 bg-blue-900 bg-opacity-20 px-2 py-1 rounded">
-                        {selectedElement.variableName || 'Aucune'}
+                  <div className="space-y-2 border-t border-[#444] pt-2">
+                    <h4 className="text-[10px] font-bold text-[#aaaaaa] uppercase tracking-wider mb-1">Caractère</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <select
+                          value={selectedElement.fontFamily || 'Arial'}
+                          onChange={(e) => handleUpdate('fontFamily', e.target.value)}
+                          className="w-full px-1 py-1 bg-[#222] border border-[#444] rounded text-xs outline-none"
+                        >
+                          <option value="Arial">Arial</option>
+                          <option value="Helvetica">Helvetica</option>
+                          <option value="Times New Roman">Times New Roman</option>
+                          <option value="Georgia">Georgia</option>
+                          <option value="Inter">Inter</option>
+                          <option value="Roboto">Roboto</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="number"
+                          value={selectedElement.fontSize || 16}
+                          onChange={(e) => handleUpdate('fontSize', parseInt(e.target.value) || 16)}
+                          className="w-16 px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
+                        />
+                        <span className="text-[10px] text-[#999]">px</span>
+                        <input
+                          type="color"
+                          value={selectedElement.color || '#000000'}
+                          onChange={(e) => handleUpdate('color', e.target.value)}
+                          className="w-6 h-6 rounded border border-[#444] cursor-pointer bg-transparent"
+                        />
                       </div>
                     </div>
                   </div>
                 )}
 
                 {selectedElement.type === 'shape' && (
-                  <div className="space-y-4">
-                    {/* Fill Properties */}
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Remplissage</h4>
+                  <div className="space-y-2 border-t border-[#444] pt-2">
+                    <h4 className="text-[10px] font-bold text-[#aaaaaa] uppercase tracking-wider mb-1">Apparence</h4>
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-xs mb-1">Type</label>
-                        <select
-                          value={selectedElement.fillType || 'solid'}
-                          onChange={(e) => handleUpdate('fillType', e.target.value)}
-                          className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                        >
-                          <option value="solid">Uni</option>
-                          <option value="gradient">Dégradé</option>
-                          <option value="none">Aucun</option>
-                        </select>
-                      </div>
-
-                      {selectedElement.fillType !== 'none' && (
-                        <>
-                          {selectedElement.fillType === 'solid' && (
-                            <div>
-                              <label className="block text-xs mb-1">Couleur</label>
-                              <input
-                                type="color"
-                                value={selectedElement.fillColor || selectedElement.backgroundColor || '#cccccc'}
-                                onChange={(e) => handleUpdate('fillColor', e.target.value)}
-                                className="w-full h-8 rounded border border-gray-600"
-                              />
-                            </div>
-                          )}
-
-                          {selectedElement.fillType === 'gradient' && (
-                            <div className="space-y-2">
-                              <div>
-                                <label className="block text-xs mb-1">Type de dégradé</label>
-                                <select
-                                  value={selectedElement.fillGradient?.type || 'linear'}
-                                  onChange={(e) => {
-                                    const gradient = selectedElement.fillGradient || { type: 'linear', colors: [{ color: '#ffffff', position: 0 }, { color: '#000000', position: 100 }], angle: 0 };
-                                    gradient.type = e.target.value as 'linear' | 'radial';
-                                    handleUpdate('fillGradient', gradient);
-                                  }}
-                                  className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                                >
-                                  <option value="linear">Linéaire</option>
-                                  <option value="radial">Radial</option>
-                                </select>
-                              </div>
-                              {selectedElement.fillGradient?.type === 'linear' && (
-                                <div>
-                                  <label className="block text-xs mb-1">Angle (°)</label>
-                                  <input
-                                    type="number"
-                                    value={selectedElement.fillGradient?.angle || 0}
-                                    onChange={(e) => {
-                                      const gradient = { ...selectedElement.fillGradient, angle: parseInt(e.target.value) || 0 };
-                                      handleUpdate('fillGradient', gradient);
-                                    }}
-                                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          <div>
-                            <label className="block text-xs mb-1">Opacité (%)</label>
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={Math.round((selectedElement.fillOpacity || 1) * 100)}
-                              onChange={(e) => handleUpdate('fillOpacity', parseInt(e.target.value) / 100)}
-                              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Stroke Properties */}
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Contour</h4>
-                      <div>
-                        <label className="block text-xs mb-1">Couleur</label>
-                        <input
-                          type="color"
-                          value={selectedElement.strokeColor || '#000000'}
-                          onChange={(e) => handleUpdate('strokeColor', e.target.value)}
-                          className="w-full h-8 rounded border border-gray-600"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs mb-1">Épaisseur</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={selectedElement.strokeWidth || 0}
-                          onChange={(e) => handleUpdate('strokeWidth', parseInt(e.target.value) || 0)}
-                          className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs mb-1">Style</label>
-                        <select
-                          value={selectedElement.strokeStyle || 'solid'}
-                          onChange={(e) => handleUpdate('strokeStyle', e.target.value)}
-                          className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                        >
-                          <option value="solid">Continu</option>
-                          <option value="dashed">Pointillé</option>
-                          <option value="dotted">Point</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs mb-1">Position</label>
-                        <select
-                          value={selectedElement.strokePosition || 'center'}
-                          onChange={(e) => handleUpdate('strokePosition', e.target.value)}
-                          className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                        >
-                          <option value="center">Centre</option>
-                          <option value="inside">Intérieur</option>
-                          <option value="outside">Extérieur</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs mb-1">Opacité (%)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={Math.round((selectedElement.strokeOpacity || 1) * 100)}
-                          onChange={(e) => handleUpdate('strokeOpacity', parseInt(e.target.value) / 100)}
-                          className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Rounded Corners */}
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Coins arrondis</h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-xs mb-1">Haut-gauche</label>
+                        <label className="block text-[10px] mb-1 text-[#999]">Fond</label>
+                        <div className="flex items-center space-x-1">
                           <input
-                            type="number"
-                            min="0"
-                            value={selectedElement.borderRadiusTopLeft || 0}
-                            onChange={(e) => handleUpdate('borderRadiusTopLeft', parseInt(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                            type="color"
+                            value={selectedElement.fillColor || selectedElement.backgroundColor || '#cccccc'}
+                            onChange={(e) => handleUpdate('fillColor', e.target.value)}
+                            className="w-full h-6 rounded border border-[#444] cursor-pointer"
                           />
                         </div>
-                        <div>
-                          <label className="block text-xs mb-1">Haut-droite</label>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] mb-1 text-[#999]">Contour</label>
+                        <div className="flex items-center space-x-1">
                           <input
-                            type="number"
-                            min="0"
-                            value={selectedElement.borderRadiusTopRight || 0}
-                            onChange={(e) => handleUpdate('borderRadiusTopRight', parseInt(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs mb-1">Bas-gauche</label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={selectedElement.borderRadiusBottomLeft || 0}
-                            onChange={(e) => handleUpdate('borderRadiusBottomLeft', parseInt(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs mb-1">Bas-droite</label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={selectedElement.borderRadiusBottomRight || 0}
-                            onChange={(e) => handleUpdate('borderRadiusBottomRight', parseInt(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                            type="color"
+                            value={selectedElement.strokeColor || '#000000'}
+                            onChange={(e) => handleUpdate('strokeColor', e.target.value)}
+                            className="w-full h-6 rounded border border-[#444] cursor-pointer"
                           />
                         </div>
                       </div>
                     </div>
-
-                    {/* Shadows */}
-                    <div className="space-y-2">
-                      <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Ombres & Lueurs</h4>
-                      <button
-                        onClick={() => {
-                          const shadows = selectedElement.shadows || [];
-                          shadows.push({
-                            type: 'outer',
-                            color: '#000000',
-                            opacity: 0.5,
-                            blur: 4,
-                            distance: 4,
-                            angle: 135,
-                            spread: 0
-                          });
-                          handleUpdate('shadows', shadows);
-                        }}
-                        className="w-full py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs"
-                      >
-                        Ajouter une ombre
-                      </button>
-                      {selectedElement.shadows?.map((shadow, index) => (
-                        <div key={index} className="border border-gray-600 rounded p-2 space-y-2">
-                          <div className="flex justify-between items-center">
-                            <select
-                              value={shadow.type}
-                              onChange={(e) => {
-                                const shadows = [...(selectedElement.shadows || [])];
-                                shadows[index].type = e.target.value as 'inner' | 'outer';
-                                handleUpdate('shadows', shadows);
-                              }}
-                              className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs"
-                            >
-                              <option value="outer">Extérieure</option>
-                              <option value="inner">Intérieure</option>
-                            </select>
-                            <button
-                              onClick={() => {
-                                const shadows = (selectedElement.shadows || []).filter((_, i) => i !== index);
-                                handleUpdate('shadows', shadows);
-                              }}
-                              className="text-red-400 hover:text-red-300 text-xs"
-                            >
-                              ×
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xs mb-1">Couleur</label>
-                              <input
-                                type="color"
-                                value={shadow.color}
-                                onChange={(e) => {
-                                  const shadows = [...(selectedElement.shadows || [])];
-                                  shadows[index].color = e.target.value;
-                                  handleUpdate('shadows', shadows);
-                                }}
-                                className="w-full h-6 rounded border border-gray-600"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs mb-1">Opacité</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max="1"
-                                step="0.1"
-                                value={shadow.opacity}
-                                onChange={(e) => {
-                                  const shadows = [...(selectedElement.shadows || [])];
-                                  shadows[index].opacity = parseFloat(e.target.value) || 0;
-                                  handleUpdate('shadows', shadows);
-                                }}
-                                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs mb-1">Flou</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={shadow.blur}
-                                onChange={(e) => {
-                                  const shadows = [...(selectedElement.shadows || [])];
-                                  shadows[index].blur = parseInt(e.target.value) || 0;
-                                  handleUpdate('shadows', shadows);
-                                }}
-                                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs mb-1">Distance</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={shadow.distance}
-                                onChange={(e) => {
-                                  const shadows = [...(selectedElement.shadows || [])];
-                                  shadows[index].distance = parseInt(e.target.value) || 0;
-                                  handleUpdate('shadows', shadows);
-                                }}
-                                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs"
-                              />
-                            </div>
-                            <div className="col-span-2">
-                              <label className="block text-xs mb-1">Angle (°)</label>
-                              <input
-                                type="number"
-                                min="0"
-                                max="360"
-                                value={shadow.angle}
-                                onChange={(e) => {
-                                  const shadows = [...(selectedElement.shadows || [])];
-                                  shadows[index].angle = parseInt(e.target.value) || 0;
-                                  handleUpdate('shadows', shadows);
-                                }}
-                                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex items-center space-x-2 pt-1">
+                      <label className="text-[10px] text-[#999] w-12">Epaisseur</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={selectedElement.strokeWidth || 0}
+                        onChange={(e) => handleUpdate('strokeWidth', parseInt(e.target.value) || 0)}
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs text-right focus:border-blue-500 outline-none"
+                      />
+                      <span className="text-[10px] text-[#999]">px</span>
                     </div>
                   </div>
                 )}
 
-                {/* Opacity */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-gray-300 uppercase tracking-wide">Apparence</h4>
-                  <div>
-                    <label className="block text-xs mb-1">Opacité (%)</label>
+                {/* Filters Section */}
+                <div className="space-y-2 border-t border-[#444] pt-2">
+                  <h4 className="text-[10px] font-bold text-[#aaaaaa] uppercase tracking-wider mb-1">Filtres</h4>
+
+                  {/* Blur */}
+                  <div className="flex items-center space-x-2">
+                    <label className="text-[10px] text-[#999] w-16">Flou</label>
                     <input
-                      type="number"
+                      type="range"
                       min="0"
-                      max="100"
-                      value={Math.round((selectedElement.opacity || 1) * 100)}
-                      onChange={(e) => handleUpdate('opacity', parseInt(e.target.value) / 100)}
-                      className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
+                      max="20"
+                      step="0.5"
+                      value={selectedElement.filter?.blur || 0}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        onElementUpdate(selectedElement.id, {
+                          filter: { ...selectedElement.filter, blur: val }
+                        });
+                      }}
+                      className="flex-1 h-1 bg-[#222] rounded-lg appearance-none cursor-pointer"
                     />
+                    <span className="text-[10px] text-[#999] w-8 text-right">{selectedElement.filter?.blur || 0}px</span>
+                  </div>
+
+                  {/* Brightness */}
+                  <div className="flex items-center space-x-2">
+                    <label className="text-[10px] text-[#999] w-16">Luminosité</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      value={selectedElement.filter?.brightness ?? 100}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        onElementUpdate(selectedElement.id, {
+                          filter: { ...selectedElement.filter, brightness: val }
+                        });
+                      }}
+                      className="flex-1 h-1 bg-[#222] rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="text-[10px] text-[#999] w-8 text-right">{selectedElement.filter?.brightness ?? 100}%</span>
+                  </div>
+
+                  {/* Contrast */}
+                  <div className="flex items-center space-x-2">
+                    <label className="text-[10px] text-[#999] w-16">Contraste</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="200"
+                      value={selectedElement.filter?.contrast ?? 100}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        onElementUpdate(selectedElement.id, {
+                          filter: { ...selectedElement.filter, contrast: val }
+                        });
+                      }}
+                      className="flex-1 h-1 bg-[#222] rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="text-[10px] text-[#999] w-8 text-right">{selectedElement.filter?.contrast ?? 100}%</span>
+                  </div>
+
+                  {/* Drop Shadow */}
+                  <div className="pt-2 mt-2 border-t border-[#444]">
+                    <h5 className="text-[10px] font-bold text-[#aaaaaa] mb-2">Ombre PortÃ©e</h5>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <label className="text-[10px] text-[#999] w-12">Couleur</label>
+                      <input
+                        type="color"
+                        value={selectedElement.filter?.shadow?.color || '#000000'}
+                        onChange={(e) => {
+                          const newShadow = { ...selectedElement.filter?.shadow, color: e.target.value };
+                          onElementUpdate(selectedElement.id, {
+                            filter: { ...selectedElement.filter, shadow: newShadow }
+                          });
+                        }}
+                        className="w-full h-4 rounded border border-[#444] cursor-pointer"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center space-x-1">
+                        <label className="text-[10px] text-[#999] w-4">X</label>
+                        <input
+                          type="number"
+                          value={selectedElement.filter?.shadow?.x || 0}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            const newShadow = { ...selectedElement.filter?.shadow, x: val };
+                            onElementUpdate(selectedElement.id, {
+                              filter: { ...selectedElement.filter, shadow: newShadow }
+                            });
+                          }}
+                          className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <label className="text-[10px] text-[#999] w-4">Y</label>
+                        <input
+                          type="number"
+                          value={selectedElement.filter?.shadow?.y || 0}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            const newShadow = { ...selectedElement.filter?.shadow, y: val };
+                            onElementUpdate(selectedElement.id, {
+                              filter: { ...selectedElement.filter, shadow: newShadow }
+                            });
+                          }}
+                          className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-1 mt-2">
+                      <label className="text-[10px] text-[#999] w-12">Flou</label>
+                      <input
+                        type="number"
+                        value={selectedElement.filter?.shadow?.blur || 0}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          const newShadow = { ...selectedElement.filter?.shadow, blur: val };
+                          onElementUpdate(selectedElement.id, {
+                            filter: { ...selectedElement.filter, shadow: newShadow }
+                          });
+                        }}
+                        className="w-full px-1 py-0.5 bg-[#222] border border-[#444] rounded text-xs"
+                      />
+                      <span className="text-[10px] text-[#999]">px</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="pt-2 border-t border-gray-600">
+                <div className="pt-4 mt-2 border-t border-[#444]">
                   <button
                     onClick={() => onElementDelete(selectedElement.id)}
-                    className="w-full py-2 bg-red-600 hover:bg-red-700 rounded text-sm transition-colors"
+                    className="w-full py-1 bg-[#4a2e2e] hover:bg-[#683b3b] text-[#ffcccc] border border-[#683b3b] rounded text-xs transition-colors flex items-center justify-center space-x-1"
                   >
-                    Supprimer l'élément
+                    <Trash2 className="w-3 h-3" />
+                    <span>Supprimer</span>
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-400 text-sm mb-2">Aucun élément sélectionné</div>
-                <div className="text-gray-500 text-xs">Cliquez sur un élément pour voir ses propriétés</div>
+              <div className="flex flex-col items-center justify-center h-full text-[#666] space-y-2">
+                <Settings className="w-8 h-8 opacity-20" />
+                <p className="text-center italic">Sélectionnez un élément<br />pour voir ses propriétés</p>
               </div>
-            )}
-          </div>
-        )}
-
-        {activePanel === 'history' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Historique</h3>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-xs">
-                <span>Ajouter un élément</span>
-                <button className="text-blue-400 hover:text-blue-300">⌫</button>
-              </div>
-              <div className="text-xs text-gray-400 mt-2">
-                Ctrl + Alt + Z pour revenir en arrière
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'swatches' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Nuancier</h3>
-            <div className="grid grid-cols-6 gap-1">
-              {[
-                '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00',
-                '#FF00FF', '#00FFFF', '#800000', '#008000', '#000080', '#808000',
-                '#800080', '#008080', '#808080', '#C0C0C0', '#FFA500', '#A52A2A'
-              ].map((color) => (
-                <div
-                  key={color}
-                  className="w-6 h-6 rounded border border-gray-600 cursor-pointer hover:border-white"
-                  style={{ backgroundColor: color }}
-                  onClick={() => console.log('Selected color:', color)}
-                />
-              ))}
-            </div>
-            <button className="w-full mt-3 py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">
-              Nouveau nuancier
-            </button>
-          </div>
-        )}
-
-        {activePanel === 'adjustments' && (
-          <DynamicVariablesPanel
-            onVariableSelect={onVariableSelect}
-            onVariableDrag={onVariableDrag}
-          />
-        )}
-
-        {activePanel === 'paragraph' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Paragraphe</h3>
-            {selectedElement?.type === 'text' ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs mb-1">Alignement</label>
-                  <div className="flex space-x-1">
-                    <button className="flex-1 py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">Gauche</button>
-                    <button className="flex-1 py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">Centre</button>
-                    <button className="flex-1 py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">Droite</button>
-                    <button className="flex-1 py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">Justifié</button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs mb-1">Retrait gauche</label>
-                  <input
-                    type="number"
-                    defaultValue="0"
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs mb-1">Retrait droite</label>
-                  <input
-                    type="number"
-                    defaultValue="0"
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs mb-1">Interlignage</label>
-                  <input
-                    type="number"
-                    defaultValue="1.2"
-                    step="0.1"
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                  />
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-400 text-sm">Sélectionnez un élément texte</p>
-            )}
-          </div>
-        )}
-
-        {activePanel === 'styles' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Styles</h3>
-            <div className="space-y-2">
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Ombre portée
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Lueur externe
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Lueur interne
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Biseau et estampage
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Incrustation couleur
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Superposition de dégradé
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Superposition de motif
-              </button>
-              <button className="w-full py-2 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs text-left">
-                Contour
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'channels' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Canaux</h3>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-xs">
-                <span>RVB</span>
-                <div className="w-3 h-3 bg-white rounded"></div>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-xs">
-                <span>Rouge</span>
-                <div className="w-3 h-3 bg-red-500 rounded"></div>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-xs">
-                <span>Vert</span>
-                <div className="w-3 h-3 bg-green-500 rounded"></div>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-gray-700 rounded text-xs">
-                <span>Bleu</span>
-                <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'paths' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Tracés</h3>
-            <div className="space-y-1">
-              <div className="text-xs text-gray-400 mb-2">Aucun tracé</div>
-              <button className="w-full py-1 px-2 bg-gray-600 hover:bg-gray-500 rounded text-xs">
-                Nouveau tracé
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'libraries' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Bibliothèques</h3>
-            <div className="space-y-2">
-              <div className="text-xs text-gray-400">Éléments enregistrés</div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="aspect-square bg-gray-700 rounded flex items-center justify-center text-xs">
-                  Logo 1
-                </div>
-                <div className="aspect-square bg-gray-700 rounded flex items-center justify-center text-xs">
-                  Style 1
-                </div>
-                <div className="aspect-square bg-gray-700 rounded flex items-center justify-center text-xs">
-                  Couleur 1
-                </div>
-                <div className="aspect-square bg-gray-700 rounded flex items-center justify-center text-xs">
-                  Forme 1
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activePanel === 'character' && (
-          <div>
-            <h3 className="text-sm font-semibold mb-3">Caractère</h3>
-            {selectedElement?.type === 'text' ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs mb-1">Police</label>
-                  <select
-                    value={selectedElement.fontFamily || 'Arial'}
-                    onChange={(e) => handleUpdate('fontFamily', e.target.value)}
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                  >
-                    <option value="Arial">Arial</option>
-                    <option value="Helvetica">Helvetica</option>
-                    <option value="Times New Roman">Times New Roman</option>
-                    <option value="Georgia">Georgia</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs mb-1">Taille</label>
-                  <input
-                    type="number"
-                    value={selectedElement.fontSize || 16}
-                    onChange={(e) => handleUpdate('fontSize', parseInt(e.target.value) || 16)}
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs mb-1">Couleur</label>
-                  <input
-                    type="color"
-                    value={selectedElement.color || '#000000'}
-                    onChange={(e) => handleUpdate('color', e.target.value)}
-                    className="w-full h-8 rounded border border-gray-600"
-                  />
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-400 text-sm">Sélectionnez un élément texte</p>
             )}
           </div>
         )}
       </div>
+
+      {/* Bottom Dock: Layers */}
+      <div className="flex-1 flex flex-col min-h-[200px] bg-[#333333]">
+        <PanelHeader
+          title="Calques"
+          icon={Layers}
+          isOpen={panelsOpen.layers}
+          onToggle={() => togglePanel('layers')}
+          actions={
+            <>
+              <button className="p-1 hover:bg-[#505050] rounded text-[#aaaaaa]" title="Nouveau calque"><FilePlus className="w-3 h-3" /></button>
+              <button className="p-1 hover:bg-[#505050] rounded text-[#aaaaaa]" title="Nouveau groupe"><Folder className="w-3 h-3" /></button>
+              <button className="p-1 hover:bg-[#505050] rounded text-[#aaaaaa]" title="Supprimer calque"><Trash2 className="w-3 h-3" /></button>
+            </>
+          }
+        />
+        {panelsOpen.layers && (
+          <div className="flex-1 overflow-y-auto">
+            <LayersPanel
+              templateElements={templateElements}
+              selectedElement={selectedElement}
+              onElementSelect={onElementSelect}
+              onElementUpdate={onElementUpdate}
+              onElementDelete={onElementDelete}
+            />
+          </div>
+        )}
+      </div>
+
     </div>
   );
 };

@@ -38,7 +38,8 @@ export interface CertificateTemplate {
   type?: 'bimades-gold' | 'bimades-green' | 'bimades-blue' | 'custom';
   description?: string;
   elements: TemplateElement[];
-  canvasData?: string;
+  canvasData?: any; // Allow object or string
+  html?: string; // HTML content for HTML templates
   backgroundColor?: string;
   width?: number;
   height?: number;
@@ -47,6 +48,9 @@ export interface CertificateTemplate {
   editorType?: 'simple' | 'canvas'; // Type d'éditeur utilisé pour créer le template
   editableAfterSave?: boolean; // Permet la modification après enregistrement
   layers?: TemplateLayer[]; // Layer hierarchy for PSD/AI imports
+  aiPrompt?: string;
+  aiGenerated?: boolean;
+  outputFormat?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -67,6 +71,7 @@ export interface TemplateLayer {
 export interface TemplateElement {
   id: string;
   type: 'text' | 'image' | 'shape' | 'logo' | 'group';
+  children?: string[]; // IDs of child elements for groups
   x: number;
   y: number;
   width: number;
@@ -145,6 +150,23 @@ export interface TemplateElement {
   // Layer properties
   locked?: boolean;
   visible?: boolean;
+
+  // Filters
+  filter?: {
+    blur?: number;
+    brightness?: number;
+    contrast?: number;
+    shadow?: {
+      x: number;
+      y: number;
+      blur: number;
+      color: string;
+    };
+    grayscale?: number;
+    sepia?: number;
+    hueRotate?: number;
+    saturate?: number;
+  };
 
   // PSD/AI import properties
   layerName?: string; // Original layer name from PSD/AI

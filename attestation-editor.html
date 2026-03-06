@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Éditeur d'Attestation de Formation</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f5f5f5;
+}
+
+.toolbar {
+  background-color: #222;
+  color: white;
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.toolbar h1 {
+  font-size: 20px;
+  font-weight: normal;
+}
+
+.toolbar-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.toolbar button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+.toolbar button:hover {
+  background-color: #45a049;
+}
+
+.toolbar button.secondary {
+  background-color: #555;
+}
+
+.toolbar button.secondary:hover {
+  background-color: #666;
+}
+
+.editor-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: calc(100vh - 70px);
+  padding: 40px 20px;
+}
+
+.certificate-container {
+  width: 1200px;
+  background-color: #FFFFFF;
+  border: 2px solid #222;
+  padding: 80px 100px;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.certificate-container::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  bottom: 20px;
+  border: 1px solid #222;
+  pointer-events: none;
+}
+
+.draggable {
+  cursor: move;
+  position: relative;
+  transition: transform 0.1s ease;
+}
+
+.draggable.dragging {
+  opacity: 0.5;
+  z-index: 1000;
+}
+
+.draggable:hover {
+  outline: 2px dashed #2196F3;
+  outline-offset: 4px;
+}
+
+#title {
+  font-size: 48px;
+  font-weight: bold;
+  text-align: center;
+  color: #222;
+  margin-bottom: 20px;
+  letter-spacing: 4px;
+}
+
+#subtitle {
+  font-size: 20px;
+  text-align: center;
+  color: #555;
+  margin-bottom: 60px;
+  font-style: italic;
+}
+
+#bodyText {
+  font-size: 18px;
+  line-height: 2;
+  color: #222;
+  text-align: justify;
+  margin-bottom: 80px;
+}
+
+#footer {
+  font-size: 16px;
+  color: #555;
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+#signature {
+  font-size: 18px;
+  color: #222;
+  text-align: right;
+  font-weight: bold;
+  padding-top: 20px;
+  border-top: 2px solid #222;
+  width: 300px;
+  margin-left: auto;
+}
+
+[contenteditable="true"]:focus {
+  outline: 2px solid #4CAF50;
+  outline-offset: 4px;
+  cursor: text;
+}
+
+[contenteditable="true"] {
+  cursor: text;
+}
+
+@media print {
+  .toolbar {
+    display: none;
+  }
+  
+  .editor-container {
+    padding: 0;
+    min-height: auto;
+  }
+  
+  .certificate-container {
+    box-shadow: none;
+    border: 2px solid #222;
+  }
+  
+  .draggable:hover {
+    outline: none;
+  }
+  
+  body {
+    background-color: white;
+  }
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+  background-color: white;
+  margin: 10% auto;
+  padding: 30px;
+  border-radius: 8px;
+  width: 500px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.modal-content h2 {
+  margin-bottom: 20px;
+  color: #222;
+}
+
+.modal-content label {
+  display: block;
+  margin-bottom: 8px;
+  color: #555;
+  font-weight: bold;
+}
+
+.modal-content input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.modal-buttons button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.modal-buttons .btn-primary {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.modal-buttons .btn-primary:hover {
+  background-color: #45a049;
+}
+
+.modal-buttons .btn-secondary {
+  background-color: #ccc;
+  color: #222;
+}
+
+.modal-buttons .btn-secondary:hover {
+  background-color: #bbb;
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Éditeur d'Attestation de Formation</h1>
+  <div class="toolbar-buttons">
+    <button onclick="fillVariables()">Remplir les variables</button>
+    <button onclick="saveAsHTML()" class="secondary">Sauvegarder HTML</button>
+    <button onclick="printCertificate()" class="secondary">Imprimer</button>
+  </div>
+</div>
+
+<div class="editor-container">
+  <div class="certificate-container" id="certificate">
+    <div id="title" class="draggable" contenteditable="true" draggable="true">ATTESTATION DE FORMATION</div>
+    <div id="subtitle" class="draggable" contenteditable="true" draggable="true">Certificat de réussite</div>
+    <div id="bodyText" class="draggable" contenteditable="true" draggable="true">Je soussigné(e), représentant de l'organisme <strong>{{organisme}}</strong>, atteste par la présente que <strong>{{participantName}}</strong> a suivi avec assiduité la formation intitulée <strong>{{formation}}</strong>, dispensée du <strong>{{dates}}</strong> à <strong>{{lieu}}</strong>. Cette formation a été encadrée par <strong>{{formateur}}</strong> et s'est déroulée dans le respect du programme pédagogique prévu.</div>
+    <div id="footer" class="draggable" contenteditable="true" draggable="true">Fait à {{lieu}}, le {{dateEmission}}</div>
+    <div id="signature" class="draggable" contenteditable="true" draggable="true">Signature et cachet</div>
+  </div>
+</div>
+
+<div id="variablesModal" class="modal">
+  <div class="modal-content">
+    <h2>Remplir les variables</h2>
+    <label>Nom du participant</label>
+    <input type="text" id="participantName" placeholder="Jean Dupont">
+    
+    <label>Formation</label>
+    <input type="text" id="formation" placeholder="Développement Web Avancé">
+    
+    <label>Dates</label>
+    <input type="text" id="dates" placeholder="01/01/2026 au 15/02/2026">
+    
+    <label>Organisme</label>
+    <input type="text" id="organisme" placeholder="Centre de Formation Professionnel">
+    
+    <label>Formateur</label>
+    <input type="text" id="formateur" placeholder="Marie Martin">
+    
+    <label>Lieu</label>
+    <input type="text" id="lieu" placeholder="Paris">
+    
+    <label>Date d'émission</label>
+    <input type="text" id="dateEmission" placeholder="11/02/2026">
+    
+    <div class="modal-buttons">
+      <button class="btn-secondary" onclick="closeModal()">Annuler</button>
+      <button class="btn-primary" onclick="applyVariables()">Appliquer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let draggedElement = null;
+let draggedIndex = 0;
+
+document.querySelectorAll('.draggable').forEach((elem, index) => {
+  elem.addEventListener('dragstart', function(e) {
+    draggedElement = this;
+    draggedIndex = index;
+    this.classList.add('dragging');
+  });
+
+  elem.addEventListener('dragend', function(e) {
+    this.classList.remove('dragging');
+  });
+
+  elem.addEventListener('dragover', function(e) {
+    e.preventDefault();
+  });
+
+  elem.addEventListener('drop', function(e) {
+    e.preventDefault();
+    if (draggedElement !== this) {
+      const container = document.getElementById('certificate');
+      const allElements = Array.from(container.querySelectorAll('.draggable'));
+      const thisIndex = allElements.indexOf(this);
+      
+      if (draggedIndex < thisIndex) {
+        this.parentNode.insertBefore(draggedElement, this.nextSibling);
+      } else {
+        this.parentNode.insertBefore(draggedElement, this);
+      }
+    }
+  });
+});
+
+function fillVariables() {
+  document.getElementById('variablesModal').style.display = 'block';
+}
+
+function closeModal() {
+  document.getElementById('variablesModal').style.display = 'none';
+}
+
+function applyVariables() {
+  const variables = {
+    participantName: document.getElementById('participantName').value,
+    formation: document.getElementById('formation').value,
+    dates: document.getElementById('dates').value,
+    organisme: document.getElementById('organisme').value,
+    formateur: document.getElementById('formateur').value,
+    lieu: document.getElementById('lieu').value,
+    dateEmission: document.getElementById('dateEmission').value
+  };
+
+  const certificate = document.getElementById('certificate');
+  let html = certificate.innerHTML;
+
+  Object.keys(variables).forEach(key => {
+    const regex = new RegExp(`{{${key}}}`, 'g');
+    html = html.replace(regex, variables[key]);
+  });
+
+  certificate.innerHTML = html;
+  
+  document.querySelectorAll('.draggable').forEach((elem, index) => {
+    elem.addEventListener('dragstart', function(e) {
+      draggedElement = this;
+      draggedIndex = index;
+      this.classList.add('dragging');
+    });
+
+    elem.addEventListener('dragend', function(e) {
+      this.classList.remove('dragging');
+    });
+
+    elem.addEventListener('dragover', function(e) {
+      e.preventDefault();
+    });
+
+    elem.addEventListener('drop', function(e) {
+      e.preventDefault();
+      if (draggedElement !== this) {
+        const container = document.getElementById('certificate');
+        const allElements = Array.from(container.querySelectorAll('.draggable'));
+        const thisIndex = allElements.indexOf(this);
+        
+        if (draggedIndex < thisIndex) {
+          this.parentNode.insertBefore(draggedElement, this.nextSibling);
+        } else {
+          this.parentNode.insertBefore(draggedElement, this);
+        }
+      }
+    });
+  });
+
+  closeModal();
+}
+
+function printCertificate() {
+  window.print();
+}
+
+function saveAsHTML() {
+  const certificate = document.getElementById('certificate');
+  const htmlContent = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attestation de Formation</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f5f5f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+}
+
+.certificate-container {
+  width: 1200px;
+  background-color: #FFFFFF;
+  border: 2px solid #222;
+  padding: 80px 100px;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.certificate-container::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  bottom: 20px;
+  border: 1px solid #222;
+  pointer-events: none;
+}
+
+#title {
+  font-size: 48px;
+  font-weight: bold;
+  text-align: center;
+  color: #222;
+  margin-bottom: 20px;
+  letter-spacing: 4px;
+  position: relative;
+}
+
+#subtitle {
+  font-size: 20px;
+  text-align: center;
+  color: #555;
+  margin-bottom: 60px;
+  font-style: italic;
+  position: relative;
+}
+
+#bodyText {
+  font-size: 18px;
+  line-height: 2;
+  color: #222;
+  text-align: justify;
+  margin-bottom: 80px;
+  position: relative;
+}
+
+#footer {
+  font-size: 16px;
+  color: #555;
+  text-align: center;
+  margin-bottom: 60px;
+  position: relative;
+}
+
+#signature {
+  font-size: 18px;
+  color: #222;
+  text-align: right;
+  font-weight: bold;
+  position: relative;
+  padding-top: 20px;
+  border-top: 2px solid #222;
+  width: 300px;
+  margin-left: auto;
+}
+
+@media print {
+  body {
+    background-color: white;
+  }
+  
+  .certificate-container {
+    box-shadow: none;
+  }
+}
+</style>
+</head>
+<body>
+<div class="certificate-container">
+${certificate.innerHTML.replace(/draggable/g, '').replace(/contenteditable="true"/g, '')}
+</div>
+</body>
+</html>`;
+
+  const blob = new Blob([htmlContent], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'attestation-formation.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+window.onclick = function(event) {
+  const modal = document.getElementById('variablesModal');
+  if (event.target === modal) {
+    closeModal();
+  }
+}
+</script>
+
+</body>
+</html>

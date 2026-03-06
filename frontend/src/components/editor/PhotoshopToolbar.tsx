@@ -282,10 +282,9 @@ const PhotoshopToolbar: React.FC<PhotoshopToolbarProps> = ({ onAddElement, onToo
   ];
 
   return (
-    <div className="w-32 bg-[#2D2D2D] flex flex-col items-start" style={{ fontSize: '5px', direction: 'rtl', overflowY: 'auto' }}>
-      <div style={{ direction: 'ltr', textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-        {tools.map((tool, index) => (
-        <div key={tool.id} className="relative group mb-0.5">
+    <div className="flex flex-col items-center w-full" style={{ fontSize: '10px' }}>
+      {tools.map((tool) => (
+        <div key={tool.id} className="relative group mb-1 w-full flex justify-center">
           <button
             onClick={() => handleToolSelect(tool.id)}
             onContextMenu={(e) => {
@@ -294,30 +293,35 @@ const PhotoshopToolbar: React.FC<PhotoshopToolbarProps> = ({ onAddElement, onToo
                 setShowMenu(showMenu === tool.id ? null : tool.id);
               }
             }}
-            draggable={tool.id !== 'move' && tool.id !== 'hand' && tool.id !== 'zoom'} // Only allow dragging for creation tools
+            draggable={tool.id !== 'move' && tool.id !== 'hand' && tool.id !== 'zoom'}
             onDragStart={(e) => handleDragStart(e, tool.id)}
-            className={`w-12 h-12 flex items-center justify-center rounded transition-colors ${
-              selectedTool === tool.id ? 'bg-blue-600' : 'hover:bg-blue-500'
-            } ${tool.id !== 'move' && tool.id !== 'hand' && tool.id !== 'zoom' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+            className={`w-7 h-7 flex items-center justify-center rounded-sm transition-colors relative ${selectedTool === tool.id ? 'bg-[#535353] text-white' : 'text-[#b3b3b3] hover:text-white hover:bg-[#454545]'
+              }`}
             title={`${tool.label} (${tool.shortcut})`}
           >
-            {React.createElement(getCurrentIcon(tool), { className: "w-6 h-6 text-white" })}
+            {React.createElement(getCurrentIcon(tool), { className: "w-4 h-4" })}
+            {tool.subTools && (
+              <div className="absolute bottom-0.5 right-0.5 w-1 h-1 bg-[#aaaaaa]" style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 100%)' }}></div>
+            )}
           </button>
-          <div className="absolute left-full top-0 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap ml-2 z-50">
-            <span className="text-xs">{tool.label}</span>
-            <br />
-            <span className="text-gray-400 text-xs">{tool.shortcut}</span>
+
+          {/* Tooltip */}
+          <div className="absolute left-full top-0 bg-[#282828] text-[#eeeeee] text-xs px-2 py-1 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap ml-2 z-[100] border border-[#111111] pointer-events-none">
+            <span>{tool.label}</span> <span className="text-[#888888]">({tool.shortcut})</span>
           </div>
+
+          {/* Sub-menu Context */}
           {tool.subTools && showMenu === tool.id && (
-            <div className="absolute left-full top-0 bg-gray-200 border border-gray-300 rounded shadow-lg z-50 ml-2">
+            <div className="absolute left-full top-0 bg-[#3a3a3a] border border-[#111111] shadow-2xl z-[100] ml-2 w-48 py-1">
               {tool.subTools.map((subTool) => (
                 <button
                   key={subTool.id}
                   onClick={() => handleSubToolSelect(tool.id, subTool.id)}
-                  className="w-full px-2 py-1 text-left hover:bg-gray-300 text-gray-800 text-xs flex items-center space-x-2"
+                  className="w-full px-3 py-2 text-left hover:bg-[#2980b9] text-[#eeeeee] text-xs flex items-center space-x-3 group/item"
                 >
-                  {React.createElement(subTool.icon, { className: "w-3 h-3" })}
-                  <span>{subTool.label}</span>
+                  {React.createElement(subTool.icon, { className: "w-4 h-4" })}
+                  <div className="flex-1">{subTool.label}</div>
+                  <div className="text-[#888888] group-hover/item:text-white text-[10px]">{tool.shortcut}</div>
                 </button>
               ))}
             </div>
@@ -325,39 +329,29 @@ const PhotoshopToolbar: React.FC<PhotoshopToolbarProps> = ({ onAddElement, onToo
         </div>
       ))}
 
-      {/* Color Pickers */}
-      <div className="w-full mt-4">
-        <div className="w-8 h-px bg-gray-600 my-2 mx-auto"></div>
-        <div className="space-y-1">
-          <div className="w-8 h-8 bg-black border-2 border-white rounded mx-auto cursor-pointer" title="Couleur de premier plan"></div>
-          <div className="w-8 h-8 bg-white border-2 border-gray-400 rounded mx-auto cursor-pointer" title="Couleur d'arrière-plan"></div>
-          <button className="w-8 h-8 flex items-center justify-center hover:bg-blue-500 rounded mx-auto" title="Inverser les couleurs (X)">
-            <div className="w-4 h-4 border border-gray-300 rounded-sm relative">
-              <div className="absolute inset-0 bg-black rounded-sm transform rotate-45 scale-75"></div>
-            </div>
-          </button>
-          <button className="w-8 h-8 flex items-center justify-center hover:bg-blue-500 rounded mx-auto" title="Restaurer noir/blanc">
-            <RefreshCw className="w-4 h-4 text-white" />
-          </button>
-        </div>
+      <div className="w-6 h-px bg-[#505050] my-2"></div>
+
+      {/* Color Swatches */}
+      <div className="relative w-8 h-8 mb-4">
+        <div className="absolute top-0 left-0 w-5 h-5 bg-black border border-[#aaaaaa] z-10 cursor-pointer" title="Premier plan"></div>
+        <div className="absolute bottom-0 right-0 w-5 h-5 bg-white border border-[#aaaaaa] cursor-pointer" title="Arrière plan"></div>
+        <button className="absolute -top-1 -right-1 z-20 hover:text-white text-[#aaaaaa]" title="Inverser (X)">
+          <RefreshCw className="w-2.5 h-2.5" />
+        </button>
       </div>
 
-      {/* Screen Modes */}
-      <div className="w-full mt-4">
-        <div className="w-8 h-px bg-gray-600 my-2 mx-auto"></div>
-        <div className="space-y-1">
-          <button className="w-8 h-8 flex items-center justify-center hover:bg-blue-500 rounded mx-auto" title="Mode normal">
-            <Monitor className="w-4 h-4 text-white" />
-          </button>
-          <button className="w-8 h-8 flex items-center justify-center hover:bg-blue-500 rounded mx-auto" title="Plein écran avec barres">
-            <Monitor className="w-4 h-4 text-white" />
-          </button>
-          <button className="w-8 h-8 flex items-center justify-center hover:bg-blue-500 rounded mx-auto" title="Plein écran total">
-            <Monitor className="w-4 h-4 text-white" />
-          </button>
+      <div className="w-6 h-px bg-[#505050] my-2"></div>
+
+      <button className="w-7 h-7 flex items-center justify-center rounded-sm text-[#b3b3b3] hover:text-white hover:bg-[#454545] mb-1" title="Mode Masque (Q)">
+        <div className="w-4 h-4 border border-current rounded-full bg-transparent flex items-center justify-center">
+          <div className="w-2 h-2 bg-current rounded-full"></div>
         </div>
-      </div>
-      </div>
+      </button>
+
+      <button className="w-7 h-7 flex items-center justify-center rounded-sm text-[#b3b3b3] hover:text-white hover:bg-[#454545]" title="Mode Écran (F)">
+        <Monitor className="w-4 h-4" />
+      </button>
+
     </div>
   );
 };

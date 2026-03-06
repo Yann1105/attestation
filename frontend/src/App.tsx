@@ -9,14 +9,12 @@ import TrainingManagement from './components/TrainingManagement';
 import HistoryPage from './components/HistoryPage';
 import SettingsPage from './components/SettingsPage';
 import ChatBot from './components/ChatBot';
+import CanvasPage from './components/canvas/CanvasPage';
+import { AITemplateEditor } from './components/AITemplateEditor';
 import { authApi, getAuthToken } from './utils/api';
 
-type AppState = 'participant' | 'admin-login' | 'admin-dashboard' | 'admin-templates' | 'admin-history' | 'admin-trainings' | 'admin-statistics' | 'admin-settings' | 'admin-editor';
+type AppState = 'participant' | 'admin-login' | 'admin-dashboard' | 'admin-templates' | 'admin-history' | 'admin-trainings' | 'admin-statistics' | 'admin-settings' | 'admin-editor' | 'admin-canvas' | 'admin-ai-editor';
 
-interface EditingTemplate {
-  template: any;
-  isEditing: boolean;
-}
 
 function App() {
   const [currentView, setCurrentView] = useState<AppState>('participant');
@@ -75,12 +73,22 @@ function App() {
       case 'settings':
         setCurrentView('admin-settings');
         break;
+      case 'canva':
+        setCurrentView('admin-canvas');
+        break;
+      case 'ai-editor':
+        setCurrentView('admin-ai-editor');
+        break;
     }
   };
 
   const handleEditTemplate = (template: any) => {
     setEditingTemplate(template);
-    setCurrentView('admin-editor');
+    if (template?.outputFormat === 'html' || template?.output_format === 'html') {
+      setCurrentView('admin-canvas');
+    } else {
+      setCurrentView('admin-editor');
+    }
   };
 
   // Navigation buttons for switching between participant and admin views
@@ -88,21 +96,19 @@ function App() {
     <div className="fixed top-4 right-4 z-50 flex space-x-2">
       <button
         onClick={() => setCurrentView('participant')}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          currentView === 'participant'
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-        }`}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentView === 'participant'
+          ? 'bg-blue-600 text-white'
+          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+          }`}
       >
         Participant
       </button>
       <button
         onClick={() => setCurrentView(isAdminLoggedIn ? 'admin-dashboard' : 'admin-login')}
-        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-          currentView.startsWith('admin')
-            ? 'bg-blue-600 text-white'
-            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-        }`}
+        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentView.startsWith('admin')
+          ? 'bg-blue-600 text-white'
+          : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+          }`}
       >
         Admin
       </button>
@@ -174,10 +180,24 @@ function App() {
         />
       )}
 
+      {currentView === 'admin-canvas' && isAdminLoggedIn && (
+        <CanvasPage
+          onBack={() => {
+            setEditingTemplate(null);
+            setCurrentView('admin-dashboard');
+          }}
+          initialTemplate={editingTemplate}
+        />
+      )}
+
+      {currentView === 'admin-ai-editor' && isAdminLoggedIn && (
+        <AITemplateEditor onBack={() => setCurrentView('admin-dashboard')} />
+      )}
+
       {/* ChatBot disponible partout */}
-      <ChatBot 
-        isOpen={showChatBot} 
-        onToggle={() => setShowChatBot(!showChatBot)} 
+      <ChatBot
+        isOpen={showChatBot}
+        onToggle={() => setShowChatBot(!showChatBot)}
       />
     </div>
   );

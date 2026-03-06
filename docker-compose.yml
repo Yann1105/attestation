@@ -1,0 +1,64 @@
+services:
+  # Database Service
+  attestation_db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-attestation_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./backend/.env
+    environment:
+      - PORT=3002
+      - DB_HOST=attestation_db
+      - DB_NAME=${DB_NAME:-attestation_db}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_PORT=5432
+      # GEMINI_API_KEY will be loaded from env_file
+      - CANVAS_UPLOAD_DIR=./uploads/canvas
+      - MAX_FILE_SIZE=5242880
+      - RENDER_TIMEOUT=30000
+      - MAX_RENDER_QUEUE=50
+      # Add other env vars here or use env_file
+    depends_on:
+      attestation_db:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/uploads
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  uploads_data:
+
+

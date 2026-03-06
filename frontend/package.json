@@ -34,17 +34,20 @@
     "@types/nodemailer": "^7.0.3",
     "@types/pg": "^8.15.6",
     "@webtoon/psd": "^0.4.0",
+    "@monaco-editor/react": "^4.6.0",
     "canvas": "^3.2.0",
     "fabric": "^6.9.0",
     "html2canvas": "^1.4.1",
     "jsdom": "^27.2.0",
     "jspdf": "^3.0.2",
     "jszip": "^3.10.1",
+    "konva": "^9.3.0",
     "lucide-react": "^0.344.0",
     "nodemailer": "^7.0.10",
     "pg": "^8.16.3",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-konva": "^18.2.10"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Download, Eye, Palette, Trash2, Layers, Edit, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Palette, Trash2, Layers, Edit, X, ChevronDown, FileText } from 'lucide-react';
 import { CertificateTemplate } from '../types';
 import { templatesApi } from '../utils/api';
 import { defaultTemplates } from '../utils/certificateTemplates';
 import JSZip from 'jszip';
 
 interface CertificateTemplatesProps {
-    onBack: () => void;
-    onNewTemplate?: () => void;
-    onEditTemplate?: (template: CertificateTemplate) => void;
+  onBack: () => void;
+  onNewTemplate?: () => void;
+  onEditTemplate?: (template: CertificateTemplate) => void;
 }
 
 const CertificateTemplates: React.FC<CertificateTemplatesProps> = ({ onBack, onNewTemplate, onEditTemplate }) => {
@@ -255,24 +255,32 @@ const CertificateTemplates: React.FC<CertificateTemplatesProps> = ({ onBack, onN
 
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="flex justify-between items-center mb-6">
-           <p className="text-gray-600">
-             Gérez vos modèles de certificats
-           </p>
-           {onNewTemplate && (
-             <button
-               onClick={onNewTemplate}
-               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-             >
-               <Palette className="w-4 h-4 mr-2" />
-               Nouveau Template
-             </button>
-           )}
-         </div>
+          <p className="text-gray-600">
+            Gérez vos modèles de certificats
+          </p>
+          {onNewTemplate && (
+            <button
+              onClick={onNewTemplate}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            >
+              <Palette className="w-4 h-4 mr-2" />
+              Nouveau Template
+            </button>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {templates.map((template) => (
             <div key={template.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <div className="h-48 bg-gray-100 relative overflow-hidden">
+              <div className="h-48 bg-gray-100 relative overflow-hidden border-b border-gray-100">
+                {/* Fallback for HTML templates without elements */}
+                {(template.elements || []).length === 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                    <FileText className="w-12 h-12 mb-2 opacity-20" />
+                    <span className="text-xs font-medium uppercase tracking-wider opacity-40">Aperçu HTML</span>
+                  </div>
+                )}
+
                 <div
                   className="w-full h-full relative"
                   style={{
@@ -283,7 +291,7 @@ const CertificateTemplates: React.FC<CertificateTemplatesProps> = ({ onBack, onN
                     height: '500%'
                   }}
                 >
-                  {template.elements
+                  {(template.elements || [])
                     .sort((a, b) => a.zIndex - b.zIndex)
                     .slice(0, 10) // Limit elements for preview
                     .map((element) => (
@@ -342,7 +350,12 @@ const CertificateTemplates: React.FC<CertificateTemplatesProps> = ({ onBack, onN
               <div className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
-                    <h3 className="font-semibold text-gray-900">{template.name}</h3>
+                    <h3 className="font-semibold text-gray-900 line-clamp-1">{template.name}</h3>
+                    {template.aiGenerated && (
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded-md font-bold uppercase flex items-center">
+                        IA
+                      </span>
+                    )}
                     {template.canvasData ? (
                       <span className="px-2 py-1 bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 text-xs rounded-full font-medium flex items-center">
                         <Palette className="w-3 h-3 mr-1" />
@@ -376,7 +389,10 @@ const CertificateTemplates: React.FC<CertificateTemplatesProps> = ({ onBack, onN
 
                 <div className="mb-4">
                   <p className="text-sm text-gray-500">
-                    {template.elements.length} élément{template.elements.length > 1 ? 's' : ''}
+                    {(template.elements || []).length > 0
+                      ? `${(template.elements || []).length} élément${(template.elements || []).length > 1 ? 's' : ''}`
+                      : 'Template HTML Premium'
+                    }
                   </p>
                   <p className="text-xs text-gray-400">
                     {template.width} × {template.height}px

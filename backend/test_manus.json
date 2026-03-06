@@ -1,0 +1,9 @@
+{
+    "model": "manus-1.6-lite",
+    "messages": [
+        {
+            "role": "user",
+            "content": "hi"
+        }
+    ]
+}
