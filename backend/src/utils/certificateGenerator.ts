@@ -377,7 +377,20 @@ export class CertificateGenerator {
    * Génère HTML depuis Canvas Data (pour l'éditeur Canvas)
    */
   generateHTMLFromCanvas(canvasData: any): string {
-    const { width, height, backgroundColor, objects } = canvasData;
+    if (!canvasData) return '';
+
+    // If it's already HTML (from AI generation)
+    if (!canvasData.objects && canvasData.content) {
+      return canvasData.content;
+    }
+
+    const { width, height, backgroundColor, objects = [] } = canvasData;
+
+    // If no objects and no content, but we have canvasData, 
+    // it might be an empty canvas or a malformed AI response
+    if (objects.length === 0 && canvasData.html) {
+      return canvasData.html;
+    }
 
     let html = `
 <!DOCTYPE html>
@@ -659,9 +672,9 @@ export class CertificateGenerator {
         ">
             <svg width="${(obj.width || 100) * scaleX}" height="${(obj.height || 100) * scaleY}" viewBox="0 0 ${obj.width || 100} ${obj.height || 100}">
                 ${obj.type === 'polygon'
-                  ? `<polygon points="${obj.points?.map((p: any) => `${p.x},${p.y}`).join(' ')}" fill="${obj.fill || '#000'}" />`
-                  : `<path d="${obj.path}" fill="${obj.fill || '#000'}" />`
-                }
+            ? `<polygon points="${obj.points?.map((p: any) => `${p.x},${p.y}`).join(' ')}" fill="${obj.fill || '#000'}" />`
+            : `<path d="${obj.path}" fill="${obj.fill || '#000'}" />`
+          }
             </svg>
         </div>
 `;

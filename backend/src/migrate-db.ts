@@ -125,6 +125,18 @@ async function migrateDatabase() {
                       WHERE table_name='templates' AND column_name='template_type') THEN
           ALTER TABLE templates ADD COLUMN template_type VARCHAR(50);
         END IF;
+
+        -- Add editor_type if not exists
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name='templates' AND column_name='editor_type') THEN
+          ALTER TABLE templates ADD COLUMN editor_type VARCHAR(50) DEFAULT 'simple';
+        END IF;
+
+        -- Add output_format if not exists
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name='templates' AND column_name='output_format') THEN
+          ALTER TABLE templates ADD COLUMN output_format VARCHAR(50) DEFAULT 'html';
+        END IF;
       END $$;
 
     `);

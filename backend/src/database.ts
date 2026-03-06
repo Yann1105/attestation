@@ -66,6 +66,13 @@ export const initializeDatabase = async (retries = 5, delay = 2000) => {
           background_color VARCHAR(20) DEFAULT '#FFFFFF',
           width INTEGER DEFAULT 1200,
           height INTEGER DEFAULT 850,
+          editor_type VARCHAR(50) DEFAULT 'simple',
+          content TEXT,
+          placeholders JSONB,
+          file_path VARCHAR(500),
+          ai_generated BOOLEAN DEFAULT false,
+          ai_prompt TEXT,
+          output_format VARCHAR(50) DEFAULT 'html',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
